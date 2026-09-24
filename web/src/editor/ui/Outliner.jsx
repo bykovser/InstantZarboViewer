@@ -4,9 +4,14 @@ import { download } from '../io.js';
 import { textureFileName, textureLabel, textureURL } from './textures.js';
 import { formatBytes, linearToHex, Tabs, useDoc } from './widgets.jsx';
 
-function NodeItem({ model, node, depth }) {
+function collectNodes(node, acc) {
+  acc.push(node);
+  for (const c of node.listChildren()) collectNodes(c, acc);
+}
+
+function NodeItem({ model, node, depth, openSet, toggle }) {
   useDoc(model);
-  const [open, setOpen] = useState(depth < 2);
+  const open = openSet.has(node);
   const children = node.listChildren();
   const mesh = node.getMesh();
   const materials = mesh ? [...new Set(mesh.listPrimitives().map((p) => p.getMaterial()).filter(Boolean))] : [];
@@ -16,7 +21,7 @@ function NodeItem({ model, node, depth }) {
   return (
     <li>
       <div class={`tree-row ${sel?.kind === 'node' && sel.node === node ? 'selected' : ''}`} style={{ paddingLeft: `${depth * 12 + 4}px` }}>
-        <button class="twisty" onClick={() => setOpen(!open)} disabled={!children.length && !materials.length}>
+        <button class="twisty" onClick={() => toggle(node)} disabled={!children.length && !materials.length}>
           {children.length || materials.length ? (open ? '▾' : '▸') : '·'}
         </button>
         <span class="tree-name" onClick={() => (model.selection.value = { kind: 'node', node })}>
@@ -41,18 +46,40 @@ function NodeItem({ model, node, depth }) {
               </li>
             );
           })}
-          {children.map((c) => <NodeItem model={model} node={c} depth={depth + 1} />)}
+          {children.map((c) => <NodeItem model={model} node={c} depth={depth + 1} openSet={openSet} toggle={toggle} />)}
         </ul>
       )}
     </li>
   );
 }
 
+// Starts fully collapsed with Expand/Collapse-all controls, like the old addon's scene explorer.
 function SceneTree({ model }) {
   useDoc(model);
+  const [openSet, setOpenSet] = useState(() => new Set());
   const scene = model.root.getDefaultScene() ?? model.root.listScenes()[0];
   if (!scene) return <p class="muted pad">Нет сцены</p>;
-  return <ul class="tree">{scene.listChildren().map((n) => <NodeItem model={model} node={n} depth={0} />)}</ul>;
+  const roots = scene.listChildren();
+  const toggle = (node) => setOpenSet((prev) => {
+    const next = new Set(prev);
+    if (next.has(node)) next.delete(node); else next.add(node);
+    return next;
+  });
+  const expandAll = () => {
+    const all = [];
+    for (const n of roots) collectNodes(n, all);
+    setOpenSet(new Set(all));
+  };
+  const collapseAll = () => setOpenSet(new Set());
+  return (
+    <>
+      <div class="tree-controls">
+        <button title="Развернуть всё" onClick={expandAll}>▾ Развернуть всё</button>
+        <button title="Свернуть всё" onClick={collapseAll}>▸ Свернуть всё</button>
+      </div>
+      <ul class="tree">{roots.map((n) => <NodeItem model={model} node={n} depth={0} openSet={openSet} toggle={toggle} />)}</ul>
+    </>
+  );
 }
 
 function MaterialList({ model }) {

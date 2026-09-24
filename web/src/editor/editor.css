@@ -89,6 +89,9 @@ body.editing #editor-root { display: contents; }
   cursor: pointer;
   white-space: nowrap;
 }
+.tree-controls { display: flex; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--ed-line); }
+.tree-controls button { border: 1px solid var(--ed-line); background: none; color: var(--ed-muted); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.tree-controls button:hover { color: var(--ed-text); border-color: var(--ed-accent); }
 .tree-row:hover, .list li:hover { background: #2d3035; }
 .tree-row.selected, .list li.selected { background: var(--ed-sel); }
 #editor-root .twisty { border: 0; background: none; padding: 0 2px; width: 16px; color: var(--ed-muted); }

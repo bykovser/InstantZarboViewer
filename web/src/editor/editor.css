@@ -190,6 +190,7 @@ body.editing #editor-root { display: contents; }
 }
 .slot-thumb:hover { outline: 1px solid var(--ed-accent); }
 .slot-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.slot-default { width: 100%; height: 100%; display: grid; place-items: center; color: #0006; font-size: 18px; }
 .slot-body { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .slot-body .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-title { font-weight: 600; }

@@ -95,9 +95,14 @@ export const GROUPS = [
     textures: [{ label: 'Emissive', prop: 'EmissiveTexture', color: true }],
   },
   {
+    // Shown inside "Emission"; the extension is created on first edit (glTF caps emissiveFactor at 1).
     id: 'emissiveStrength', title: 'Emissive strength', ext: 'KHR_materials_emissive_strength', create: 'createEmissiveStrength',
+    inline: 'emissive',
     fields: [
-      { key: 'emissiveStrength', label: 'Strength', ...range(0, 100, 0.1), prop: 'EmissiveStrength', three: (t, v) => { t.emissiveIntensity = v; } },
+      {
+        key: 'emissiveStrength', label: 'Strength', ...range(0, 100, 0.1), prop: 'EmissiveStrength', default: 1,
+        three: (t, v) => { t.emissiveIntensity = v; },
+      },
     ],
   },
   {

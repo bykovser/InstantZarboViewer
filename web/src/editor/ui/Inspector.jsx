@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 
-import { GROUPS } from '../../materials/schema.js';
+import { GROUPS, NEUTRAL_TEXTURES } from '../../materials/schema.js';
 import { download } from '../io.js';
 import { NEUTRAL_PREFIX } from '../model.js';
 import { blackbodyLinear, KELVIN_PRESETS } from './blackbody.js';
@@ -14,7 +14,7 @@ function documentSwatches(model) {
 }
 
 function FieldControl({ model, index, field, material }) {
-  const value = model.readField(material, field.key);
+  const value = model.readField(material, field.key) ?? field.default;
   const set = (v) => model.setField(index, field.key, v);
   switch (field.type) {
     case 'color':
@@ -55,6 +55,7 @@ function BlackbodyRow({ model, index }) {
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const NEUTRAL_NAMES = { white: 'белая', normal: 'плоская нормаль', anisotropy: 'нейтральное направление' };
 
 function TextureSlot({ model, index, group, slot }) {
   const input = useRef();
@@ -71,7 +72,7 @@ function TextureSlot({ model, index, group, slot }) {
 
   // One list for "what's in this slot": existing textures + the neutral 1×1.
   const options = [
-    ...(texture ? [] : [{ value: '', label: '— пусто —' }]),
+    ...(texture ? [] : [{ value: '', label: `По умолчанию — ${NEUTRAL_NAMES[neutralKind]} (без текстуры)` }]),
     { value: 'neutral', label: `Нейтральная 1×1 (${neutralKind})` },
     ...textures
       .map((t, i) => ({ t, i }))
@@ -92,7 +93,9 @@ function TextureSlot({ model, index, group, slot }) {
       onDrop={(e) => { e.preventDefault(); setDragOver(false); useFile(e.dataTransfer.files[0]); }}
     >
       <div class="slot-thumb" onClick={upload} title="Загрузить изображение (или перетащите файл на слот)">
-        {texture ? (url ? <img src={url} /> : <span>{texture.getMimeType().split('/')[1]}</span>) : <span>+</span>}
+        {texture
+          ? (url ? <img src={url} /> : <span>{texture.getMimeType().split('/')[1]}</span>)
+          : <span class="slot-default" style={{ background: `rgb(${NEUTRAL_TEXTURES[neutralKind].slice(0, 3).join(',')})` }}>+</span>}
       </div>
       <div class="slot-body">
         <div class="slot-title">{slot.label}</div>
@@ -117,13 +120,11 @@ function TextureSlot({ model, index, group, slot }) {
             onClick={() => model.clearSlot(index, group, slot)}
           >Убрать</button>
         </div>
-        {texture && (
-          <div class="muted">
-            {neutral
-              ? 'работает только фактор'
-              : `${size ? `${size[0]}×${size[1]}` : '?'} · ${texture.getMimeType().replace('image/', '')} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
-          </div>
-        )}
+        <div class="muted">
+          {!texture || neutral
+            ? 'работает только фактор'
+            : `${size ? `${size[0]}×${size[1]}` : '?'} · ${texture.getMimeType().replace('image/', '')} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
+        </div>
       </div>
       <input
         ref={input} type="file" accept={IMAGE_TYPES.join(',')} hidden
@@ -148,7 +149,9 @@ function MaterialInspector({ model, index }) {
         <input type="text" value={material.getName()} onChange={(e) => model.renameMaterial(index, e.currentTarget.value)} />
       </Row>
       {GROUPS.map((group) => {
+        if (group.inline) return null;
         const enabled = !group.ext || model.hasExtension(index, group.ext);
+        const inlined = GROUPS.filter((g) => g.inline === group.id).flatMap((g) => g.fields);
         if (isUnlit && group.id !== 'base' && group.id !== 'unlit') return null;
         const toggle = group.ext && (
           <input
@@ -162,7 +165,7 @@ function MaterialInspector({ model, index }) {
               <p class="muted">{group.ext} — не используется. Включите галочкой.</p>
             ) : (
               <>
-                {group.fields.map((field) => (
+                {[...group.fields, ...inlined].map((field) => (
                   <Row label={field.label}>
                     <FieldControl model={model} index={index} field={field} material={material} />
                   </Row>

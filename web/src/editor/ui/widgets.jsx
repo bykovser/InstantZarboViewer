@@ -5,10 +5,6 @@ const _c = new Color();
 
 // glTF factors are linear; the color picker works in sRGB hex.
 export const linearToHex = (rgb) => `#${_c.setRGB(...rgb).getHexString(SRGBColorSpace)}`;
-export const hexToLinear = (hex) => {
-  _c.setStyle(hex, SRGBColorSpace);
-  return [_c.r, _c.g, _c.b];
-};
 
 const round = (v, step) => {
   const digits = Math.max(0, -Math.floor(Math.log10(step)));
@@ -38,10 +34,6 @@ export function Slider({ value, min, max, step = 0.01, onInput }) {
       />
     </span>
   );
-}
-
-export function ColorInput({ value, onInput }) {
-  return <input type="color" value={linearToHex(value ?? [1, 1, 1])} onInput={(e) => onInput(hexToLinear(e.currentTarget.value))} />;
 }
 
 export function Select({ value, options, onChange }) {

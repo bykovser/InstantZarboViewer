@@ -1,17 +1,24 @@
-import { useRef } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 
 import { GROUPS } from '../../materials/schema.js';
 import { download } from '../io.js';
 import { NEUTRAL_PREFIX } from '../model.js';
+import { blackbodyLinear, KELVIN_PRESETS } from './blackbody.js';
+import { ColorPicker } from './ColorPicker.jsx';
 import { textureFileName, textureLabel, textureURL } from './textures.js';
-import { ColorInput, formatBytes, Row, Section, Select, Slider } from './widgets.jsx';
+import { formatBytes, linearToHex, Row, Section, Select, Slider } from './widgets.jsx';
+
+// Base colors of all materials: quick picks in the color picker.
+function documentSwatches(model) {
+  return [...new Set(model.materials().map((m) => linearToHex(m.getBaseColorFactor().slice(0, 3))))];
+}
 
 function FieldControl({ model, index, field, material }) {
   const value = model.readField(material, field.key);
   const set = (v) => model.setField(index, field.key, v);
   switch (field.type) {
     case 'color':
-      return <ColorInput value={value} onInput={set} />;
+      return <ColorPicker value={value} onInput={set} swatches={documentSwatches(model)} />;
     case 'bool':
       return <input type="checkbox" checked={Boolean(value)} onChange={(e) => set(e.currentTarget.checked)} />;
     case 'select':
@@ -21,56 +28,109 @@ function FieldControl({ model, index, field, material }) {
   }
 }
 
+// Emissive color from a blackbody temperature, like Blender's Blackbody node (strength stays separate).
+function BlackbodyRow({ model, index }) {
+  const [kelvin, setKelvin] = useState(null);
+  const apply = (k) => {
+    setKelvin(k);
+    model.setField(index, 'emissive', blackbodyLinear(k));
+  };
+  return (
+    <>
+      <Row label="Blackbody, K" title="Цвет излучения по температуре; сила — Emissive strength">
+        <Slider value={kelvin ?? 6500} min={1000} max={12000} step={50} onInput={apply} />
+      </Row>
+      <div class="presets">
+        {KELVIN_PRESETS.map((p) => (
+          <button
+            class={kelvin === p.k ? 'active' : ''} title={`${p.k} K`} onClick={() => apply(p.k)}
+            style={{ '--c': linearToHex(blackbodyLinear(p.k)) }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
 function TextureSlot({ model, index, group, slot }) {
   const input = useRef();
+  const [dragOver, setDragOver] = useState(false);
   const { texture, info } = model.getSlot(index, group, slot);
   const textures = model.root.listTextures();
   const url = textureURL(texture);
   const size = texture?.getSize();
-  const neutral = texture?.getName().startsWith(NEUTRAL_PREFIX);
+  const neutral = Boolean(texture?.getName().startsWith(NEUTRAL_PREFIX));
+  const neutralKind = slot.neutral ?? 'white';
+
+  const upload = () => input.current.click();
+  const useFile = (file) => file && IMAGE_TYPES.includes(file.type) && model.replaceSlotImage(index, group, slot, file);
+
+  // One list for "what's in this slot": existing textures + the neutral 1×1.
+  const options = [
+    ...(texture ? [] : [{ value: '', label: '— пусто —' }]),
+    { value: 'neutral', label: `Нейтральная 1×1 (${neutralKind})` },
+    ...textures
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => !t.getName().startsWith(NEUTRAL_PREFIX))
+      .map(({ t, i }) => ({ value: String(i), label: textureLabel(t, i) })),
+  ];
+  const current = !texture ? '' : neutral ? 'neutral' : String(textures.indexOf(texture));
+  const choose = (v) => {
+    if (v === 'neutral') model.clearSlot(index, group, slot);
+    else if (v !== '') model.setSlotTexture(index, group, slot, textures[Number(v)]);
+  };
 
   return (
-    <div class="slot">
-      <div class="slot-thumb" onClick={() => input.current.click()} title="Заменить изображение">
+    <div
+      class={`slot ${dragOver ? 'drag' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); useFile(e.dataTransfer.files[0]); }}
+    >
+      <div class="slot-thumb" onClick={upload} title="Загрузить изображение (или перетащите файл на слот)">
         {texture ? (url ? <img src={url} /> : <span>{texture.getMimeType().split('/')[1]}</span>) : <span>+</span>}
       </div>
       <div class="slot-body">
         <div class="slot-title">{slot.label}</div>
-        {texture ? (
-          <>
-            <div class="muted">
-              {neutral
-                ? `нейтральная 1×1 (${slot.neutral ?? 'white'}) — работает только фактор`
-                : `${textureLabel(texture, textures.indexOf(texture))} · ${size ? `${size[0]}×${size[1]}` : '?'} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
-            </div>
-            <div class="slot-actions">
-              <label title="UV-канал (TEXCOORD_n)">
-                UV <Select
-                  value={String(info?.getTexCoord() ?? 0)}
-                  options={['0', '1', '2', '3']}
-                  onChange={(v) => model.setSlotTexCoord(index, group, slot, Number(v))}
-                />
-              </label>
-              <button onClick={() => download(texture.getImage(), textureFileName(texture, textures.indexOf(texture)), texture.getMimeType())}>Скачать</button>
-              {!neutral && (
-                <button onClick={() => model.clearSlot(index, group, slot)} title="Заменить нейтральной 1×1: фактор остаётся множителем">Убрать</button>
-              )}
-            </div>
-          </>
-        ) : (
-          <Select
-            value=""
-            options={[{ value: '', label: 'Нет — выбрать существующую…' }, ...textures.map((t, i) => ({ value: String(i), label: textureLabel(t, i) }))]}
-            onChange={(v) => v !== '' && model.setSlotTexture(index, group, slot, textures[Number(v)])}
-          />
+        <Select value={current} options={options} onChange={choose} />
+        <div class="slot-actions">
+          <label class="slot-uv" title="UV-канал (TEXCOORD_n)">
+            UV
+            <Select
+              value={String(info?.getTexCoord() ?? 0)}
+              options={['0', '1', '2', '3']}
+              onChange={(v) => model.setSlotTexCoord(index, group, slot, Number(v))}
+            />
+          </label>
+          <button onClick={upload}>Загрузить…</button>
+          <button
+            disabled={!texture || neutral} title="Скачать изображение"
+            onClick={() => download(texture.getImage(), textureFileName(texture, textures.indexOf(texture)), texture.getMimeType())}
+          >⤓</button>
+          <button
+            disabled={!texture || neutral}
+            title="Заменить нейтральной 1×1: фактор остаётся множителем"
+            onClick={() => model.clearSlot(index, group, slot)}
+          >Убрать</button>
+        </div>
+        {texture && (
+          <div class="muted">
+            {neutral
+              ? 'работает только фактор'
+              : `${size ? `${size[0]}×${size[1]}` : '?'} · ${texture.getMimeType().replace('image/', '')} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
+          </div>
         )}
       </div>
       <input
-        ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden
+        ref={input} type="file" accept={IMAGE_TYPES.join(',')} hidden
         onChange={(e) => {
           const file = e.currentTarget.files[0];
           e.currentTarget.value = '';
-          if (file) model.replaceSlotImage(index, group, slot, file);
+          useFile(file);
         }}
       />
     </div>
@@ -107,6 +167,7 @@ function MaterialInspector({ model, index }) {
                     <FieldControl model={model} index={index} field={field} material={material} />
                   </Row>
                 ))}
+                {group.id === 'emissive' && <BlackbodyRow model={model} index={index} />}
                 {group.textures?.map((slot) => <TextureSlot model={model} index={index} group={group} slot={slot} />)}
               </>
             )}

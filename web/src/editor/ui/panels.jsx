@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { EXPORT_DEFAULTS, exportGLB } from '../export.js';
 import { download } from '../io.js';
+import { ColorPicker } from './ColorPicker.jsx';
 import { formatBytes, Row, Section, Select, Slider } from './widgets.jsx';
 
 function useStore(store) {
@@ -12,8 +13,6 @@ function useStore(store) {
 
 export function ScenePanel({ store }) {
   const s = useStore(store);
-  // Background in the store is already sRGB 0..1.
-  const bgHex = `#${s.background.map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('')}`;
   return (
     <div class="inspector">
       <Row label="Tone mapping">
@@ -36,13 +35,7 @@ export function ScenePanel({ store }) {
         />
       </Row>
       <Row label="Фон">
-        <input
-          type="color" value={bgHex}
-          onInput={(e) => {
-            const hex = e.currentTarget.value.slice(1);
-            store.set({ background: [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) });
-          }}
-        />
+        <ColorPicker space="srgb" value={s.background} onInput={(rgb) => store.set({ background: rgb })} swatches={['#ffffff', '#f2f2f2', '#808080', '#1e1f22', '#000000']} />
       </Row>
     </div>
   );

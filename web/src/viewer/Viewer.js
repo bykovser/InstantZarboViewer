@@ -1,4 +1,6 @@
-import { Box3, Color, MathUtils, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from 'three';
+import {
+  Box3, Color, MathUtils, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
+} from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -53,18 +55,40 @@ export class Viewer {
   }
 
   async loadModel(url) {
-    const loader = new GLTFLoader()
+    this.loader ??= new GLTFLoader()
       .setMeshoptDecoder(MeshoptDecoder)
       .setDRACOLoader(new DRACOLoader().setDecoderPath('./draco/'));
-    const gltf = await loader.loadAsync(url);
+    const gltf = await this.loader.loadAsync(url);
     if (this.model) {
       this.scene.remove(this.model);
       disposeTree(this.model);
     }
+    this.gltf = gltf;
     this.model = gltf.scene;
     this.scene.add(this.model);
-    if (this.transparencyMode) this.transparency.apply(this.model, this.transparencyMode);
+    this.refreshTransparency();
+    for (const fn of this.modelListeners) fn(gltf);
     return gltf;
+  }
+
+  modelListeners = new Set();
+
+  refreshTransparency() {
+    if (this.model && this.transparencyMode) this.transparency.apply(this.model, this.transparencyMode);
+  }
+
+  // Mesh + material under a canvas point, or null.
+  pick(clientX, clientY) {
+    if (!this.model) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster ??= new Raycaster();
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = this.raycaster.intersectObject(this.model, true).find((h) => h.object.isMesh && !h.object.userData.izvPrepass);
+    if (!hit) return null;
+    const mats = Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material];
+    const material = hit.face && mats.length > 1 ? mats[hit.face.materialIndex] : mats[0];
+    return { mesh: hit.object, material };
   }
 
   async setEnvironment(source, rotationDeg) {
@@ -91,7 +115,7 @@ export class Viewer {
       for (const m of mats) patchMaterial(m, patch).forEach((k) => skipped.add(k));
       alphaChanged ||= 'alphaMode' in patch;
     }
-    if (alphaChanged) this.transparency.apply(this.model, this.transparencyMode);
+    if (alphaChanged) this.refreshTransparency();
     return { missing, skipped: [...skipped] };
   }
 

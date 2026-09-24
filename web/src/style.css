@@ -45,6 +45,10 @@ html, body {
   background: #2c2;
 }
 
+@media (max-width: 900px), (pointer: coarse) {
+  #edit { display: none; }
+}
+
 #status {
   position: fixed;
   left: 12px;

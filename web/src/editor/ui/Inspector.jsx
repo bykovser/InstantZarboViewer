@@ -3,10 +3,10 @@ import { useRef, useState } from 'preact/hooks';
 import { GROUPS, NEUTRAL_TEXTURES } from '../../materials/schema.js';
 import { download } from '../io.js';
 import { NEUTRAL_PREFIX } from '../model.js';
-import { blackbodyLinear, KELVIN_PRESETS } from './blackbody.js';
+import { blackbodyLinear, KELVIN_PRESETS } from '../blackbody.js';
 import { ColorPicker } from './ColorPicker.jsx';
 import { textureFileName, textureLabel, textureURL } from './textures.js';
-import { formatBytes, linearToHex, Row, Section, Select, Slider } from './widgets.jsx';
+import { formatBytes, linearToHex, Row, Section, Select, Slider, useDoc } from './widgets.jsx';
 
 // Base colors of all materials: quick picks in the color picker.
 function documentSwatches(model) {
@@ -14,8 +14,13 @@ function documentSwatches(model) {
 }
 
 function FieldControl({ model, index, field, material }) {
+  useDoc(model);
   const value = model.readField(material, field.key) ?? field.default;
-  const set = (v) => model.setField(index, field.key, v);
+  const set = (v) => {
+    // A hand-picked emissive color means the temperature no longer drives it.
+    if (field.key === 'emissive' && model.getBlackbody(index) !== null) model.setBlackbody(index, null);
+    model.setField(index, field.key, v);
+  };
   switch (field.type) {
     case 'color':
       return <ColorPicker value={value} onInput={set} swatches={documentSwatches(model)} />;
@@ -30,17 +35,27 @@ function FieldControl({ model, index, field, material }) {
 
 // Emissive color from a blackbody temperature, like Blender's Blackbody node (strength stays separate).
 function BlackbodyRow({ model, index }) {
-  const [kelvin, setKelvin] = useState(null);
+  useDoc(model);
+  const kelvin = model.getBlackbody(index);
+  const on = kelvin !== null;
+  // Last used K stays on the slider while the checkbox is off.
+  const [lastK, setLastK] = useState(kelvin ?? 6500);
   const apply = (k) => {
-    setKelvin(k);
-    model.setField(index, 'emissive', blackbodyLinear(k));
+    setLastK(k);
+    model.setBlackbody(index, k);
   };
   return (
     <>
-      <Row label="Blackbody, K" title="Цвет излучения по температуре; сила — Emissive strength">
-        <Slider value={kelvin ?? 6500} min={1000} max={12000} step={50} onInput={apply} />
-      </Row>
-      <div class="presets">
+      <div class="row" title="Цвет излучения по температуре (как нода Blackbody); сила — Strength">
+        <label class="row-label check-label">
+          <input type="checkbox" checked={on} onChange={(e) => model.setBlackbody(index, e.currentTarget.checked ? lastK : null)} />
+          Blackbody, K
+        </label>
+        <span class="row-control">
+          <Slider value={kelvin ?? lastK} min={1000} max={12000} step={50} disabled={!on} onInput={apply} />
+        </span>
+      </div>
+      <div class={`presets ${on ? '' : 'off'}`}>
         {KELVIN_PRESETS.map((p) => (
           <button
             class={kelvin === p.k ? 'active' : ''} title={`${p.k} K`} onClick={() => apply(p.k)}
@@ -58,6 +73,7 @@ const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const NEUTRAL_NAMES = { white: 'белая', normal: 'плоская нормаль', anisotropy: 'нейтральное направление' };
 
 function TextureSlot({ model, index, group, slot }) {
+  useDoc(model);
   const input = useRef();
   const [dragOver, setDragOver] = useState(false);
   const { texture, info } = model.getSlot(index, group, slot);
@@ -139,6 +155,7 @@ function TextureSlot({ model, index, group, slot }) {
 }
 
 function MaterialInspector({ model, index }) {
+  useDoc(model);
   const material = model.materials()[index];
   if (!material) return null;
   const isUnlit = model.hasExtension(index, 'KHR_materials_unlit');
@@ -170,7 +187,7 @@ function MaterialInspector({ model, index }) {
                     <FieldControl model={model} index={index} field={field} material={material} />
                   </Row>
                 ))}
-                {group.id === 'emissive' && <BlackbodyRow model={model} index={index} />}
+                {group.id === 'emissive' && <BlackbodyRow key={index} model={model} index={index} />}
                 {group.textures?.map((slot) => <TextureSlot model={model} index={index} group={group} slot={slot} />)}
               </>
             )}
@@ -182,6 +199,7 @@ function MaterialInspector({ model, index }) {
 }
 
 function NodeInspector({ model, node }) {
+  useDoc(model);
   const mesh = node.getMesh();
   const prims = mesh?.listPrimitives() ?? [];
   const verts = prims.reduce((n, p) => n + (p.getAttribute('POSITION')?.getCount() ?? 0), 0);

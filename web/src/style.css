@@ -31,6 +31,12 @@ html, body {
   gap: 2px;
 }
 
+#panel label.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 #live {
   position: fixed;
   top: max(16px, env(safe-area-inset-top));

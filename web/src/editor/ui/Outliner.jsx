@@ -2,9 +2,10 @@ import { useState } from 'preact/hooks';
 
 import { download } from '../io.js';
 import { textureFileName, textureLabel, textureURL } from './textures.js';
-import { formatBytes, linearToHex, Tabs } from './widgets.jsx';
+import { formatBytes, linearToHex, Tabs, useDoc } from './widgets.jsx';
 
 function NodeItem({ model, node, depth }) {
+  useDoc(model);
   const [open, setOpen] = useState(depth < 2);
   const children = node.listChildren();
   const mesh = node.getMesh();
@@ -48,12 +49,14 @@ function NodeItem({ model, node, depth }) {
 }
 
 function SceneTree({ model }) {
+  useDoc(model);
   const scene = model.root.getDefaultScene() ?? model.root.listScenes()[0];
   if (!scene) return <p class="muted pad">Нет сцены</p>;
   return <ul class="tree">{scene.listChildren().map((n) => <NodeItem model={model} node={n} depth={0} />)}</ul>;
 }
 
 function MaterialList({ model }) {
+  useDoc(model);
   const sel = model.selection.value;
   return (
     <ul class="list">
@@ -72,6 +75,7 @@ function MaterialList({ model }) {
 }
 
 function TextureList({ model }) {
+  useDoc(model);
   return (
     <ul class="list textures">
       {model.root.listTextures().map((t, i) => {

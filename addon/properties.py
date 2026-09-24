@@ -38,6 +38,10 @@ class IZV_ViewerSettings(bpy.types.PropertyGroup):
     environment_rotation: FloatProperty(name="Env rotation", subtype='ANGLE', default=0.0)
     background: FloatVectorProperty(name="Background", subtype='COLOR', size=3, min=0, max=1, default=(1, 1, 1))
     copy_camera: BoolProperty(name="Copy 3D view camera", default=True)
+    bloom: BoolProperty(name="Bloom", description="Glow preview for emission (model-viewer has no bloom)", default=False)
+    bloom_strength: FloatProperty(name="Strength", default=0.15, min=0.0, soft_max=3.0)
+    bloom_radius: FloatProperty(name="Radius", default=0.4, min=0.0, max=1.0)
+    bloom_threshold: FloatProperty(name="Threshold", default=1.0, min=0.0, soft_max=10.0)
 
 
 class IZV_ExportSettings(bpy.types.PropertyGroup):

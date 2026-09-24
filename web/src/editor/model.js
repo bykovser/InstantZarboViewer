@@ -9,9 +9,11 @@ import { signal } from '@preact/signals';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 
 import { applyToThree, FIELDS, getField, GROUPS, NEUTRAL_TEXTURES, setField } from '../materials/schema.js';
+import { blackbodyLinear } from './blackbody.js';
 import { readDocument, writeGLB } from './io.js';
 
 export const NEUTRAL_PREFIX = 'izv_neutral_';
+const BLACKBODY_EXTRA = 'izvBlackbodyK';
 const EXT_CLASSES = new Map(ALL_EXTENSIONS.map((E) => [E.EXTENSION_NAME, E]));
 const COALESCE_MS = 600;
 
@@ -197,6 +199,31 @@ export class EditorModel {
       undo: () => apply(!enabled, kept),
       redo: () => apply(enabled, created),
     });
+  }
+
+  // Emissive color driven by temperature (like Blender's Blackbody node). K lives in material extras,
+  // so it survives export and re-open; null switches it off and leaves the color as is.
+  getBlackbody(index) {
+    return this.materials()[index].getExtras()?.[BLACKBODY_EXTRA] ?? null;
+  }
+
+  setBlackbody(index, kelvin) {
+    const material = this.materials()[index];
+    const state = (k) => ({ k, color: k === null ? null : blackbodyLinear(k) });
+    const before = { k: this.getBlackbody(index), color: clone(this.readField(material, 'emissive')) };
+    const after = state(kelvin);
+    const apply = ({ k, color }) => {
+      const extras = { ...material.getExtras() };
+      if (k === null) delete extras[BLACKBODY_EXTRA];
+      else extras[BLACKBODY_EXTRA] = k;
+      material.setExtras(extras);
+      if (color) this.writeField(index, 'emissive', color);
+      this.touch();
+    };
+    apply(after);
+    // Slider drags merge into one step; switching on/off is always its own step.
+    const drag = before.k !== null && kelvin !== null;
+    this.record({ coalesceKey: drag ? `blackbody:${index}` : undefined, undo: () => apply(before), redo: () => apply(after) });
   }
 
   renameMaterial(index, name) {

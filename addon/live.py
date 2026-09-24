@@ -91,6 +91,10 @@ def viewer_snapshot(scene) -> dict:
         "transparency": v.transparency,
         "background": list(v.background),
         "environmentRotation": math.degrees(v.environment_rotation),
+        "bloom": v.bloom,
+        "bloomStrength": v.bloom_strength,
+        "bloomRadius": v.bloom_radius,
+        "bloomThreshold": v.bloom_threshold,
     }
 
 

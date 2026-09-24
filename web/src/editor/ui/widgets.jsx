@@ -20,13 +20,13 @@ export function Row({ label, children, title }) {
   );
 }
 
-export function Slider({ value, min, max, step = 0.01, onInput }) {
+export function Slider({ value, min, max, step = 0.01, disabled = false, onInput }) {
   const v = value ?? 0;
   return (
     <span class="slider">
-      <input type="range" min={min} max={max} step={step} value={v} onInput={(e) => onInput(Number(e.currentTarget.value))} />
+      <input type="range" min={min} max={max} step={step} value={v} disabled={disabled} onInput={(e) => onInput(Number(e.currentTarget.value))} />
       <input
-        type="number" step={step} value={round(v, step)}
+        type="number" step={step} value={round(v, step)} disabled={disabled}
         onChange={(e) => {
           const n = Number(e.currentTarget.value);
           if (Number.isFinite(n)) onInput(n);
@@ -72,3 +72,7 @@ export function formatBytes(n) {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1024 ** 2).toFixed(1)} MB`;
 }
+
+// @preact/signals skips children whose props didn't change: every component that reads the
+// document directly subscribes to its version.
+export const useDoc = (model) => model.version.value;

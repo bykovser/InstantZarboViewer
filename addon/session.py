@@ -10,6 +10,7 @@ import bpy
 from .export.glb import export_glb
 from .export.hdri import export_hdri
 from .export.usdz import export_usdz, legacy_blender
+from .live import viewer_snapshot
 
 
 def session_dir() -> Path:
@@ -54,11 +55,7 @@ def build(context, legacy_blender_path: str = "") -> dict:
         "model": f"session/{glb.name}",
         "usdz": f"session/{usdz.name}" if usdz else None,
         "environment": f"session/{env}" if env else "neutral",
-        "environmentRotation": math.degrees(v.environment_rotation),
-        "toneMapping": v.tone_mapping,
-        "exposure": v.exposure,
-        "transparency": v.transparency,
-        "background": list(v.background),
+        **viewer_snapshot(context.scene),
         "camera": camera_orbit(context) if v.copy_camera else None,
     }
     (out / "scene.json").write_text(json.dumps(scene, indent=2), encoding="utf-8")

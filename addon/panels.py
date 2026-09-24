@@ -39,6 +39,13 @@ class IZV_PT_Viewer(bpy.types.Panel):
         col.prop(v, "environment_rotation")
         col.prop(v, "background")
         col.prop(v, "copy_camera")
+        col.separator()
+        col.prop(v, "bloom")
+        sub = col.column()
+        sub.enabled = v.bloom
+        sub.prop(v, "bloom_strength")
+        sub.prop(v, "bloom_radius")
+        sub.prop(v, "bloom_threshold")
 
 
 class IZV_PT_Export(bpy.types.Panel):

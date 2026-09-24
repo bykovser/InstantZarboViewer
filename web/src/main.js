@@ -19,12 +19,16 @@ async function loadScene() {
 
 function bindPanel(store) {
   panel.addEventListener('input', (e) => {
-    const { name, value, type } = e.target;
+    const { name, value, type, checked } = e.target;
     if (!name) return;
-    store.set({ [name]: type === 'range' ? Number(value) : value });
+    store.set({ [name]: type === 'checkbox' ? checked : type === 'range' ? Number(value) : value });
   });
   store.subscribe((s) => {
-    for (const el of panel.elements) if (el.name in s) el.value = s[el.name];
+    for (const el of panel.elements) {
+      if (!(el.name in s)) continue;
+      if (el.type === 'checkbox') el.checked = Boolean(s[el.name]);
+      else el.value = s[el.name];
+    }
   });
 }
 

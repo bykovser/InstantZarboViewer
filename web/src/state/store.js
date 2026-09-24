@@ -8,6 +8,10 @@ export const DEFAULTS = {
   transparency: 'mv',
   background: [1, 1, 1],
   camera: null,
+  bloom: false,
+  bloomStrength: 0.15,
+  bloomRadius: 0.4,
+  bloomThreshold: 1,
 };
 
 export function createStore(initial) {

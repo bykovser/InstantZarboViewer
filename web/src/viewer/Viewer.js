@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
+import { Bloom } from './bloom.js';
 import { applyToneMapping } from './toneMapping.js';
 import { loadEnvironment } from './environment.js';
 import { createTransparency } from './transparency.js';
@@ -44,6 +45,7 @@ export class Viewer {
   resize() {
     const { clientWidth: w, clientHeight: h } = this.renderer.domElement;
     this.renderer.setSize(w, h, false);
+    this.bloom?.setSize(w, h, this.renderer.getPixelRatio());
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -52,6 +54,17 @@ export class Viewer {
     this.controls.update();
     this.transparency.update(this.camera);
     this.renderer.render(this.scene, this.camera);
+    if (this.bloomOn) this.bloom.render(this.scene, this.camera);
+  }
+
+  setBloom({ bloom, bloomStrength, bloomRadius, bloomThreshold }) {
+    this.bloomOn = Boolean(bloom);
+    if (!this.bloomOn) return;
+    if (!this.bloom) {
+      this.bloom = new Bloom(this.renderer);
+      this.resize();
+    }
+    this.bloom.set({ strength: bloomStrength, radius: bloomRadius, threshold: bloomThreshold });
   }
 
   async loadModel(url) {
@@ -123,6 +136,7 @@ export class Viewer {
     applyToneMapping(this.renderer, state.toneMapping, state.exposure);
     this.scene.background = new Color().setRGB(...state.background, SRGBColorSpace);
     this.scene.environmentRotation.y = MathUtils.degToRad(state.environmentRotation);
+    this.setBloom(state);
     if (this.model && state.transparency !== prev.transparency) {
       this.transparencyMode = state.transparency;
       this.transparency.apply(this.model, state.transparency);

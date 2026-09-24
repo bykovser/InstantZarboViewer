@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Color, SRGBColorSpace } from 'three';
 
-import { blackbodyLinear } from './blackbody.js';
+import { blackbodyLinear } from '../blackbody.js';
 
 const _c = new Color();
 

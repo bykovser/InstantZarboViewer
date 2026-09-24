@@ -34,6 +34,14 @@ export function ScenePanel({ store }) {
           onChange={(v) => store.set({ transparency: v })}
         />
       </Row>
+      <Section title="Bloom" open={s.bloom} header={<input type="checkbox" checked={s.bloom} onChange={(e) => store.set({ bloom: e.currentTarget.checked })} />}>
+        <Row label="Сила"><Slider value={s.bloomStrength} min={0} max={3} disabled={!s.bloom} onInput={(v) => store.set({ bloomStrength: v })} /></Row>
+        <Row label="Радиус"><Slider value={s.bloomRadius} min={0} max={1} disabled={!s.bloom} onInput={(v) => store.set({ bloomRadius: v })} /></Row>
+        <Row label="Порог" title="Яркость (линейная, до тонмаппинга), выше которой начинается свечение">
+          <Slider value={s.bloomThreshold} min={0} max={10} step={0.05} disabled={!s.bloom} onInput={(v) => store.set({ bloomThreshold: v })} />
+        </Row>
+        <p class="muted">Model-viewer bloom не показывает — это превью свечения emission.</p>
+      </Section>
       <Row label="Фон">
         <ColorPicker space="srgb" value={s.background} onInput={(rgb) => store.set({ background: rgb })} swatches={['#ffffff', '#f2f2f2', '#808080', '#1e1f22', '#000000']} />
       </Row>

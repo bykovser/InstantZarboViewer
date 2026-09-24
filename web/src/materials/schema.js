@@ -6,6 +6,7 @@
  *  field.prop     — glTF-Transform accessor stem: get<Prop>() / set<Prop>()
  *  field.three    — apply the value to a three.js material without reloading
  *  group.textures — texture slots: get<Prop>() / set<Prop>() / get<Prop>Info()
+ *                   slot.neutral: what "remove" puts in the slot (default white — factors are multipliers)
  *
  * Colors are linear RGB arrays (glTF factors are linear, three's working space is linear too).
  * No glTF-Transform imports here: the viewer bundle uses this file without the editor.
@@ -21,6 +22,13 @@ function setAlphaMode(t, mode) {
 }
 
 const range = (min, max, step = 0.01) => ({ type: 'range', min, max, step });
+
+// RGBA of a 1×1 texture that leaves the channel as if driven by the factor alone.
+export const NEUTRAL_TEXTURES = {
+  white: [255, 255, 255, 255],
+  normal: [128, 128, 255, 255], // flat tangent-space normal
+  anisotropy: [255, 128, 255, 255], // direction (1, 0), strength 1
+};
 
 export const GROUPS = [
   {
@@ -77,7 +85,7 @@ export const GROUPS = [
         three: (t, v) => { t.aoMapIntensity = v; },
       },
     ],
-    textures: [{ label: 'Normal', prop: 'NormalTexture' }, { label: 'Occlusion (R)', prop: 'OcclusionTexture' }],
+    textures: [{ label: 'Normal', prop: 'NormalTexture', neutral: 'normal' }, { label: 'Occlusion (R)', prop: 'OcclusionTexture' }],
   },
   {
     id: 'emissive', title: 'Emission', ext: null,
@@ -124,7 +132,7 @@ export const GROUPS = [
     textures: [
       { label: 'Clearcoat (R)', prop: 'ClearcoatTexture' },
       { label: 'Clearcoat roughness (G)', prop: 'ClearcoatRoughnessTexture' },
-      { label: 'Clearcoat normal', prop: 'ClearcoatNormalTexture' },
+      { label: 'Clearcoat normal', prop: 'ClearcoatNormalTexture', neutral: 'normal' },
     ],
   },
   {
@@ -183,7 +191,7 @@ export const GROUPS = [
         three: (t, v) => { t.anisotropyRotation = v; },
       },
     ],
-    textures: [{ label: 'Anisotropy', prop: 'AnisotropyTexture' }],
+    textures: [{ label: 'Anisotropy', prop: 'AnisotropyTexture', neutral: 'anisotropy' }],
   },
   {
     id: 'dispersion', title: 'Dispersion', ext: 'KHR_materials_dispersion', create: 'createDispersion', physical: true,

@@ -2,6 +2,7 @@ import { useRef } from 'preact/hooks';
 
 import { GROUPS } from '../../materials/schema.js';
 import { download } from '../io.js';
+import { NEUTRAL_PREFIX } from '../model.js';
 import { textureFileName, textureLabel, textureURL } from './textures.js';
 import { ColorInput, formatBytes, Row, Section, Select, Slider } from './widgets.jsx';
 
@@ -26,6 +27,7 @@ function TextureSlot({ model, index, group, slot }) {
   const textures = model.root.listTextures();
   const url = textureURL(texture);
   const size = texture?.getSize();
+  const neutral = texture?.getName().startsWith(NEUTRAL_PREFIX);
 
   return (
     <div class="slot">
@@ -37,7 +39,9 @@ function TextureSlot({ model, index, group, slot }) {
         {texture ? (
           <>
             <div class="muted">
-              {textureLabel(texture, textures.indexOf(texture))} · {size ? `${size[0]}×${size[1]}` : '?'} · {formatBytes(texture.getImage()?.byteLength ?? 0)}
+              {neutral
+                ? `нейтральная 1×1 (${slot.neutral ?? 'white'}) — работает только фактор`
+                : `${textureLabel(texture, textures.indexOf(texture))} · ${size ? `${size[0]}×${size[1]}` : '?'} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
             </div>
             <div class="slot-actions">
               <label title="UV-канал (TEXCOORD_n)">
@@ -48,7 +52,9 @@ function TextureSlot({ model, index, group, slot }) {
                 />
               </label>
               <button onClick={() => download(texture.getImage(), textureFileName(texture, textures.indexOf(texture)), texture.getMimeType())}>Скачать</button>
-              <button onClick={() => model.setSlotTexture(index, group, slot, null)}>Убрать</button>
+              {!neutral && (
+                <button onClick={() => model.clearSlot(index, group, slot)} title="Заменить нейтральной 1×1: фактор остаётся множителем">Убрать</button>
+              )}
             </div>
           </>
         ) : (

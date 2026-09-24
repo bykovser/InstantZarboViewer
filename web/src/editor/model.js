@@ -8,9 +8,10 @@
 import { signal } from '@preact/signals';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 
-import { applyToThree, FIELDS, getField, GROUPS, setField } from '../materials/schema.js';
+import { applyToThree, FIELDS, getField, GROUPS, NEUTRAL_TEXTURES, setField } from '../materials/schema.js';
 import { readDocument, writeGLB } from './io.js';
 
+export const NEUTRAL_PREFIX = 'izv_neutral_';
 const EXT_CLASSES = new Map(ALL_EXTENSIONS.map((E) => [E.EXTENSION_NAME, E]));
 const COALESCE_MS = 600;
 
@@ -242,6 +243,23 @@ export class EditorModel {
       .setMimeType(file.type || 'image/png')
       .setURI(file.name);
     this.setSlotTexture(index, group, slot, texture);
+  }
+
+  // One shared 1×1 texture per kind, reused across slots (dedup would merge copies anyway).
+  async neutralTexture(kind) {
+    const name = `${NEUTRAL_PREFIX}${kind}`;
+    const existing = this.root.listTextures().find((t) => t.getName() === name);
+    if (existing) return existing;
+    const canvas = new OffscreenCanvas(1, 1);
+    const [r, g, b, a] = NEUTRAL_TEXTURES[kind];
+    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray([r, g, b, a]), 1, 1), 0, 0);
+    const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    return this.doc.createTexture(name).setImage(bytes).setMimeType('image/png').setURI(`${name}.png`);
+  }
+
+  // Factors are multipliers: "remove" keeps the slot (UV set, runtime texture swaps) with a neutral texture.
+  async clearSlot(index, group, slot) {
+    this.setSlotTexture(index, group, slot, await this.neutralTexture(slot.neutral ?? 'white'));
   }
 
   setSlotTexCoord(index, group, slot, texCoord) {

@@ -1,0 +1,14 @@
+schema_version = "1.0.0"
+
+id = "instant_zarbo_viewer"
+version = "3.0.0"
+name = "Instant Zarbo Viewer"
+tagline = "Preview in LAN browser like model-viewer and publish to Zarbo"
+maintainer = "BykovSer"
+type = "add-on"
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+network = "LAN preview server and Zarbo API upload"
+files = "Export GLB/USDZ/HDRI to a session folder"

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+node_modules/
+addon/web_dist/
+addon/certs/
+*.zip
+.env

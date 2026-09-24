@@ -1,0 +1,66 @@
+"""A view session: one folder with exported files + scene.json that the web viewer reads."""
+import json
+import math
+import shutil
+import time
+from pathlib import Path
+
+import bpy
+
+from .export.glb import export_glb
+from .export.hdri import export_hdri
+from .export.usdz import export_usdz
+
+
+def session_dir() -> Path:
+    return Path(bpy.app.tempdir) / "izv_session"
+
+
+def camera_orbit(context) -> dict | None:
+    space = context.space_data
+    if not space or space.type != 'VIEW_3D' or not space.region_3d:
+        return None
+    rv3d = space.region_3d
+    euler = rv3d.view_rotation.to_euler()
+    target = rv3d.view_location
+    return {
+        "theta": math.degrees(euler.z),
+        "phi": math.degrees(euler.x),
+        "radius": rv3d.view_distance,
+        "target": [target.x, target.z, -target.y],  # Blender Z-up -> glTF Y-up
+    }
+
+
+def build(context) -> dict:
+    settings = context.scene.izv
+    out = session_dir()
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+
+    stamp = int(time.time())
+    glb = export_glb(context, out / f"model_{stamp}.glb", settings.export.selected_only)
+    usdz = None
+    if settings.export.export_usdz:
+        usdz = export_usdz(
+            context, out / f"model_{stamp}.usdz", settings.export.selected_only,
+            settings.export.usdz_texture_size, settings.export.usdz_animation,
+        )
+
+    v = settings.viewer
+    env = export_hdri(context.scene, v.environment, v.environment_path, out)
+
+    scene = {
+        "version": 1,
+        "model": f"session/{glb.name}",
+        "usdz": f"session/{usdz.name}" if usdz else None,
+        "environment": f"session/{env}" if env else "neutral",
+        "environmentRotation": math.degrees(v.environment_rotation),
+        "toneMapping": v.tone_mapping,
+        "exposure": v.exposure,
+        "transparency": v.transparency,
+        "background": list(v.background),
+        "camera": camera_orbit(context) if v.copy_camera else None,
+    }
+    (out / "scene.json").write_text(json.dumps(scene, indent=2), encoding="utf-8")
+    return {"dir": out, "glb": glb, "usdz": usdz, "scene": scene}

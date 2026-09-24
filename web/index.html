@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Instant Zarbo Viewer</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <form id="panel" autocomplete="off">
+      <label>Tone mapping
+        <select name="toneMapping">
+          <option value="neutral">Neutral</option>
+          <option value="aces">ACES</option>
+          <option value="agx">AgX</option>
+        </select>
+      </label>
+      <label>Exposure
+        <input name="exposure" type="range" min="0" max="3" step="0.01" />
+      </label>
+      <label>Transparency
+        <select name="transparency">
+          <option value="origin">By origin (iOS)</option>
+          <option value="mv">model-viewer</option>
+          <option value="hashed">Hashed</option>
+          <option value="prepass">Depth prepass</option>
+        </select>
+      </label>
+      <a id="ar" hidden rel="ar">AR (Quick Look)</a>
+    </form>
+    <div id="status"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

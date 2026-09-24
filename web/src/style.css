@@ -31,6 +31,20 @@ html, body {
   gap: 2px;
 }
 
+#live {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+#live.on {
+  background: #2c2;
+}
+
 #status {
   position: fixed;
   left: 12px;

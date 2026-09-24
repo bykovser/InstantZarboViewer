@@ -1,6 +1,6 @@
 import bpy
 
-from . import operators, panels, preferences, properties
+from . import live, operators, panels, preferences, properties
 from .server import http
 
 CLASSES = (
@@ -15,9 +15,11 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     properties.attach()
+    live.register()
 
 
 def unregister():
+    live.unregister()
     http.stop()
     properties.detach()
     for cls in reversed(CLASSES):

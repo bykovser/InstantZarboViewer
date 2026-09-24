@@ -18,6 +18,11 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         description="Needed for WebXR/camera on phones; uses a self-signed certificate",
         default=False,
     )
+    legacy_blender: StringProperty(
+        name="Blender 4.1 for USDZ",
+        description="USDZ from Blender 4.2+ doesn't open on iOS; empty = default 4.1 install path",
+        subtype='FILE_PATH',
+    )
     zarbo_host: StringProperty(name="Zarbo host", default=DEFAULT_HOST)
     zarbo_api_key: StringProperty(name="Zarbo Api-Key", subtype='PASSWORD')
     zarbo_collection_id: IntProperty(name="Collection id", default=0, description="0 = create on first upload")
@@ -28,6 +33,8 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         row = col.row()
         row.prop(self, "port")
         row.prop(self, "use_https")
+        col.separator()
+        col.prop(self, "legacy_blender")
         col.separator()
         col.label(text="Zarbo")
         col.prop(self, "zarbo_host")

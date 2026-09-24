@@ -1,10 +1,12 @@
-"""LAN server: web viewer bundle at /, session files at /session/*, scene manifest at /api/scene."""
+"""LAN server: viewer bundle at /, session files at /session/*, manifest at /api/scene, SSE at /api/events."""
 import socket
 import ssl
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from . import events
 
 ADDON_DIR = Path(__file__).resolve().parent.parent
 WEB_DIST = ADDON_DIR / "web_dist"
@@ -18,6 +20,12 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, session_dir: Path, **kwargs):
         self.session_dir = session_dir
         super().__init__(*args, directory=str(WEB_DIST), **kwargs)
+
+    def do_GET(self):
+        if self.path.split("?", 1)[0] == "/api/events":
+            events.stream(self)
+            return
+        super().do_GET()
 
     def translate_path(self, path):
         clean = path.split("?", 1)[0].split("#", 1)[0]
@@ -84,6 +92,7 @@ def stop():
     global _server
     if _server is None:
         return
+    events.close_all()
     _server.shutdown()
     _server.server_close()
     _server = None

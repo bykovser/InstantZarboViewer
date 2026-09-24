@@ -9,7 +9,7 @@ import bpy
 
 from .export.glb import export_glb
 from .export.hdri import export_hdri
-from .export.usdz import export_usdz
+from .export.usdz import export_usdz, legacy_blender
 
 
 def session_dir() -> Path:
@@ -31,7 +31,7 @@ def camera_orbit(context) -> dict | None:
     }
 
 
-def build(context) -> dict:
+def build(context, legacy_blender_path: str = "") -> dict:
     settings = context.scene.izv
     out = session_dir()
     if out.exists():
@@ -40,12 +40,11 @@ def build(context) -> dict:
 
     stamp = int(time.time())
     glb = export_glb(context, out / f"model_{stamp}.glb", settings.export.selected_only)
+    # No legacy Blender -> no USDZ; Zarbo then builds the iOS model from GLB itself.
     usdz = None
-    if settings.export.export_usdz:
-        usdz = export_usdz(
-            context, out / f"model_{stamp}.usdz", settings.export.selected_only,
-            settings.export.usdz_texture_size, settings.export.usdz_animation,
-        )
+    blender = legacy_blender(legacy_blender_path)
+    if settings.export.export_usdz and blender:
+        usdz = export_usdz(glb, blender, settings.export.usdz_texture_size, settings.export.usdz_animation)
 
     v = settings.viewer
     env = export_hdri(context.scene, v.environment, v.environment_path, out)

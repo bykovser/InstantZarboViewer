@@ -23,7 +23,7 @@ InstantZarboViewer/
 │   ├── session.py          «сессия просмотра»: папка + scene.json (манифест для веба)
 │   ├── export/
 │   │   ├── glb.py          bpy.ops.export_scene.gltf
-│   │   ├── usdz.py         bpy.ops.wm.usd_export (.usdz): даунскейл текстур, анимации
+│   │   ├── usdz.py         запуск Blender 4.1 в фоне → usdz_legacy_worker.py
 │   │   └── hdri.py         HDRI из World / кастомный файл
 │   ├── server/
 │   │   └── http.py         один ThreadingHTTPServer, опц. TLS; раздаёт web/dist + сессию
@@ -96,17 +96,22 @@ Blender ── Upload to Zarbo ──► ZarboClient: product → model(glb, usd
 - Embed — **`https://embed.zarbo.tech/{widget["product"]["uuid"]}/{widget["id"]}/`**, не `/widgets/render/`.
 - Референс: `../blinZarboBlenderAddon/blender-addon/managers/zarbo.py`, Postman `zarbo-dev` / `release/1.44.0`.
 
-## 3. USDZ (`addon/export/usdz.py`)
+## 3. USDZ (`addon/export/usdz.py` + `usdz_legacy_worker.py`)
 
-Нативный USD-экспортёр Blender (`bpy.ops.wm.usd_export`, файл `.usdz`), без внешнего `usd_from_gltf`.
+**USDZ из Blender 4.2+/5.x не открывается на iOS**, поэтому текущий Blender экспортирует только GLB, а USDZ
+делает Blender 4.1 в фоне (`blender -b --python usdz_legacy_worker.py -- in.glb out.usdz <size> <anim>`):
 
-- **Сжатие текстур**: `usdz_downscale_size` (256…4096 / custom) + принудительная перепаковка в JPEG
-  для карт без альфы (Quick Look лимиты по памяти).
-- **Анимации**: `export_animation=True`, диапазон кадров сцены; скелетка — `export_armatures` + `only_deform_bones`,
-  shape keys — `export_shapekeys`. Проверять на `USDz_converter/AnimatedTableTest*.glb`.
-- Материалы: `generate_preview_surface=True` (UsdPreviewSurface — единственное, что понимает Quick Look).
+- импорт GLB → **сжатие текстур** (`image.scale` до 1024/2048/4096, JPEG если нет альфы, PNG если есть) —
+  в 4.1 нет `usdz_downscale_size`;
+- **анимации**: диапазон кадров берётся из actions, `export_animation` + скелетка + shape keys;
+- Y-up руками (в 4.1 нет `convert_orientation`): корни под empty с −90° X, `upAxis=Y` через `pxr`;
+- без светильников (World → DomeLight ARKit не принимает), первый UV → `st`, `rename_uvmaps=False`;
+- упаковка `UsdUtils.CreateNewARKitUsdzPackage`, проверка `ComplianceChecker(arkit=True)`.
 
-## 4. Live link (следующий этап)
+Нет Blender 4.1 → USDZ не делаем, GLB уходит в Zarbo с `ar_ios`, iOS-версию собирает сервер Zarbo.
+USDZ не умеет Draco — тяжёлая геометрия раздувает файл (кольцо: GLB ~1 МБ → USDZ 47 МБ); нужна децимация.
+
+## 4. Live link
 
 Канал Blender → браузер: **SSE** (`GET /api/events`, `text/event-stream`) — работает поверх того же
 `http.server`, без websocket-зависимостей, браузер сам переподключается. Обратный канал не нужен.

@@ -7,6 +7,18 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { applyToneMapping } from './toneMapping.js';
 import { loadEnvironment } from './environment.js';
 import { createTransparency } from './transparency.js';
+import { materialsByName, patchMaterial } from './materials.js';
+
+function disposeTree(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    obj.geometry.dispose();
+    for (const m of Array.isArray(obj.material) ? obj.material : [obj.material]) {
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+      m.dispose();
+    }
+  });
+}
 
 export class Viewer {
   constructor(canvas) {
@@ -45,9 +57,13 @@ export class Viewer {
       .setMeshoptDecoder(MeshoptDecoder)
       .setDRACOLoader(new DRACOLoader().setDecoderPath('./draco/'));
     const gltf = await loader.loadAsync(url);
-    if (this.model) this.scene.remove(this.model);
+    if (this.model) {
+      this.scene.remove(this.model);
+      disposeTree(this.model);
+    }
     this.model = gltf.scene;
     this.scene.add(this.model);
+    if (this.transparencyMode) this.transparency.apply(this.model, this.transparencyMode);
     return gltf;
   }
 
@@ -60,10 +76,31 @@ export class Viewer {
     this.scene.environmentRotation.y = MathUtils.degToRad(rotationDeg);
   }
 
+  // Returns { missing: [material names], skipped: [props needing re-export] }.
+  patchMaterials(patches) {
+    const byName = materialsByName(this.model);
+    const missing = [];
+    const skipped = new Set();
+    let alphaChanged = false;
+    for (const [name, patch] of Object.entries(patches)) {
+      const mats = byName.get(name);
+      if (!mats) {
+        missing.push(name);
+        continue;
+      }
+      for (const m of mats) patchMaterial(m, patch).forEach((k) => skipped.add(k));
+      alphaChanged ||= 'alphaMode' in patch;
+    }
+    if (alphaChanged) this.transparency.apply(this.model, this.transparencyMode);
+    return { missing, skipped: [...skipped] };
+  }
+
   apply(state, prev = {}) {
     applyToneMapping(this.renderer, state.toneMapping, state.exposure);
     this.scene.background = new Color().setRGB(...state.background, SRGBColorSpace);
+    this.scene.environmentRotation.y = MathUtils.degToRad(state.environmentRotation);
     if (this.model && state.transparency !== prev.transparency) {
+      this.transparencyMode = state.transparency;
       this.transparency.apply(this.model, state.transparency);
     }
   }

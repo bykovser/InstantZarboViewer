@@ -1,11 +1,12 @@
+import subprocess
 import uuid
 import webbrowser
 
 import bpy
 
-from . import preferences, session
+from . import live, preferences, session
 from .export.hdri import HdriError
-from .server import http
+from .server import events, http
 from .zarbo.client import ZarboClient, ZarboError, publish
 
 
@@ -17,11 +18,15 @@ class IZV_OT_ExportAndView(bpy.types.Operator):
     def execute(self, context):
         prefs = preferences.get(context)
         try:
-            session.build(context)
+            result = session.build(context, prefs.legacy_blender)
             link = http.start(session.session_dir(), prefs.port, prefs.use_https)
-        except (HdriError, OSError, RuntimeError) as e:
+        except (HdriError, OSError, RuntimeError, subprocess.TimeoutExpired) as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
+        live.reset(context.scene)
+        if events.broadcast("scene", result["scene"]):
+            self.report({'INFO'}, "Viewer updated")
+            return {'FINISHED'}
         context.window_manager.clipboard = link
         webbrowser.open(link)
         self.report({'INFO'}, f"Viewer: {link} (copied)")
@@ -52,14 +57,14 @@ class IZV_OT_PublishZarbo(bpy.types.Operator):
         client = ZarboClient(prefs.zarbo_api_key, prefs.zarbo_host)
         name = z.product_name or bpy.path.display_name_from_filepath(bpy.data.filepath) or "Blender export"
         try:
-            result = session.build(context)
+            result = session.build(context, prefs.legacy_blender)
             if not prefs.zarbo_collection_id:
                 prefs.zarbo_collection_id = client.create_collection("Создано из Blender")["id"]
             _, embed = publish(
                 client, prefs.zarbo_collection_id, str(uuid.uuid4()), name, z.description, z.tags,
                 result["glb"], result["usdz"], widget_fields=widget_fields(result["scene"]),
             )
-        except (ZarboError, HdriError, OSError, RuntimeError) as e:
+        except (ZarboError, HdriError, OSError, RuntimeError, subprocess.TimeoutExpired) as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
         z.last_embed_url = embed

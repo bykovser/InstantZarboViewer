@@ -1,30 +1,37 @@
+"""USDZ via a legacy Blender (4.1) subprocess: USDZ from 4.2+/5.x doesn't open on iOS Quick Look.
+
+The current Blender exports GLB; the legacy one imports it and writes an ARKit-compliant USDZ.
+"""
+import json
+import subprocess
 from pathlib import Path
 
-import bpy
+WORKER = Path(__file__).with_name("usdz_legacy_worker.py")
+DEFAULT_LEGACY_BLENDER = Path("C:/Program Files/Blender Foundation/Blender 4.1/blender.exe")
 
-from . import has_selection, op_kwargs
+
+class UsdzError(RuntimeError):
+    pass
 
 
-def export_usdz(context, path: Path, selected_only: bool, texture_size: str, animation: bool) -> Path:
-    """Native Blender USD exporter; UsdPreviewSurface is the only material model Quick Look understands."""
-    scene = context.scene
-    op = bpy.ops.wm.usd_export
-    op(**op_kwargs(
-        op,
-        filepath=str(path.with_suffix(".usdz")),
-        selected_objects_only=selected_only and has_selection(context),
-        visible_objects_only=True,
-        export_materials=True,
-        generate_preview_surface=True,
-        export_textures=True,
-        overwrite_textures=True,
-        usdz_downscale_size=texture_size,
-        export_animation=animation,
-        start=scene.frame_start,
-        end=scene.frame_end,
-        export_armatures=animation,
-        only_deform_bones=True,
-        export_shapekeys=animation,
-        convert_world_material=False,
-    ))
-    return path.with_suffix(".usdz")
+def legacy_blender(pref_path: str) -> Path | None:
+    path = Path(pref_path) if pref_path else DEFAULT_LEGACY_BLENDER
+    return path if path.is_file() else None
+
+
+def export_usdz(glb: Path, blender: Path, texture_size: str, animation: bool, timeout: float = 600) -> Path:
+    dst = glb.with_suffix(".usdz")
+    max_size = "0" if texture_size == 'KEEP' else texture_size
+    proc = subprocess.run(
+        [str(blender), "-b", "--factory-startup", "--python", str(WORKER), "--",
+         str(glb), str(dst), max_size, "1" if animation else "0"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+    )
+    line = next((l for l in proc.stdout.splitlines() if l.startswith("IZV_RESULT ")), None)
+    if line is None:
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-5:]
+        raise UsdzError("USDZ export failed:\n" + "\n".join(tail))
+    problems = json.loads(line[len("IZV_RESULT "):])["arkit"]
+    if problems:
+        print("[IZV] ARKit compliance:", *problems, sep="\n  ")
+    return dst

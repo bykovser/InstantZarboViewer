@@ -109,7 +109,7 @@ Blender ── Upload to Zarbo ──► ZarboClient: product → model(glb, usd
 - упаковка `UsdUtils.CreateNewARKitUsdzPackage`, проверка `ComplianceChecker(arkit=True)`.
 
 Нет Blender 4.1 → USDZ не делаем, GLB уходит в Zarbo с `ar_ios`, iOS-версию собирает сервер Zarbo.
-USDZ не умеет Draco — тяжёлая геометрия раздувает файл (кольцо: GLB ~1 МБ → USDZ 47 МБ); нужна децимация.
+USDZ не умеет Draco — тяжёлая геометрия раздувает файл (тестовая сцена с кольцом: GLB 3 МБ с Draco → USDZ 47 МБ); нужна децимация.
 
 ## 4. Live link
 

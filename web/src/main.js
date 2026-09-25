@@ -1,6 +1,6 @@
 import { connectLive } from './live.js';
 import { createStore } from './state/store.js';
-import { Viewer } from './viewer/Viewer.js';
+import { ALL_CLIPS, Viewer } from './viewer/Viewer.js';
 
 const status = document.getElementById('status');
 const liveDot = document.getElementById('live');
@@ -106,8 +106,8 @@ async function main() {
     tabBar.hidden = tabs.length < 2;
     tabBar.replaceChildren(...tabs.map((tab, i) => {
       const el = document.createElement('button');
-      el.className = `tab ${tab === active ? 'active' : ''} ${tab.fresh ? 'fresh' : ''}`;
-      el.title = `${tab.name}${i < 9 ? ` — клавиша ${i + 1}` : ''}`;
+      el.className = `tab ${tab === active ? 'active' : ''} ${tab === compareTab ? 'b' : ''} ${tab.fresh ? 'fresh' : ''}`;
+      el.title = `${tab.name}${i < 9 ? ` — клавиша ${i + 1}, Shift+${i + 1} — сравнить (B)` : ''}`;
       el.append(Object.assign(document.createElement('span'), { className: 'tab-name', textContent: `${i + 1} · ${tab.name}` }));
       if (tab.kind === 'usd') el.append(Object.assign(document.createElement('span'), { className: 'tab-kind', textContent: 'USD' }));
       if (!tab.blender && tabs.length > 1) {
@@ -115,10 +115,15 @@ async function main() {
         x.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab); });
         el.append(x);
       }
-      el.addEventListener('click', () => switchTab(tab));
+      el.addEventListener('click', (e) => (e.shiftKey ? chooseB(tab) : switchTab(tab)));
       return el;
-    }));
+    }), compareButton);
+    compareButton.classList.toggle('active', Boolean(compareTab));
   };
+  const compareButton = Object.assign(document.createElement('button'), {
+    className: 'tab compare', textContent: '⇆', title: 'Сравнение шторкой: активная вкладка (A) против другой (B)',
+  });
+  compareButton.addEventListener('click', () => toggleCompare());
 
   // Editor: separate chunk, desktop only (button hidden on narrow screens by CSS).
   let editor = null;
@@ -155,12 +160,17 @@ async function main() {
     status.textContent = `Загрузка ${tab.name}…`;
     await viewer.loadModel(tab.url, tab.kind, { keep: true });
     if (frame) viewer.frameCamera(null);
+    const leaving = active;
+    if (leaving !== tab) prevTab = leaving;
     active = tab;
     tab.fresh = false;
+    // A took B's model: the old A becomes B.
+    if (compareTab === tab) await setCompareTab(tabs.includes(leaving) && leaving !== tab ? leaving : null);
     if (editor) await editor.model.load(tab.url, tab.blender ? undefined : tab.name);
     showUsdz(tab.usdz);
     status.textContent = '';
     renderTabs();
+    renderCompareUI();
   };
 
   const confirmDropEdits = (what) => {
@@ -179,6 +189,7 @@ async function main() {
     queue = queue.then(async () => {
       const i = tabs.indexOf(tab);
       if (tab === active) await activate(tabs[i + 1] ?? tabs[i - 1]);
+      if (tab === compareTab) await setCompareTab(tabs.find((t) => t !== tab && t !== active) ?? null);
       tabs.splice(tabs.indexOf(tab), 1);
       viewer.forget(tab.url);
       if (tab.url.startsWith('blob:')) URL.revokeObjectURL(tab.url);
@@ -188,8 +199,11 @@ async function main() {
 
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
-    const n = Number(e.key);
-    if (n >= 1 && n <= 9 && tabs[n - 1]) switchTab(tabs[n - 1]);
+    const digit = /^Digit([1-9])$/.exec(e.code);
+    const tab = digit && tabs[digit[1] - 1];
+    if (!tab) return;
+    if (e.shiftKey) chooseB(tab);
+    else switchTab(tab);
   });
 
   // New Blender export: the Blender tab gets the new file; loaded now only if it's the one on screen.
@@ -206,6 +220,7 @@ async function main() {
       await viewer.setEnvironment(next.environment, next.environmentRotation);
       tab.fresh = true;
     }
+    if (compareTab === tab) await setCompareTab(tab);
     renderTabs();
   };
 
@@ -224,6 +239,111 @@ async function main() {
       flash('Откат: правки редактора сброшены');
     }).catch((e) => flash(e.message));
   };
+
+  // --- compare: wipe between the active tab (A) and another one (B) ---------------
+  let compareTab = null;
+  let prevTab = null;
+  const overlay = Object.assign(document.createElement('div'), { id: 'compare', hidden: true });
+  overlay.innerHTML = `
+    <div class="cmp-line" title="Потяните; двойной клик — по центру"><span class="cmp-handle"></span></div>
+    <span class="cmp-label a"></span><span class="cmp-label b"></span>
+    <div class="cmp-bar">
+      <span class="cmp-hint">Alt + мышь — своя камера у стороны · Shift+клик по вкладке — сторона B</span>
+      <button class="cmp-reset" hidden>Сбросить смещения камер</button>
+    </div>`;
+  document.body.append(overlay);
+  const canvas = viewer.renderer.domElement;
+  const line = overlay.querySelector('.cmp-line');
+  const placeOverlay = () => {
+    const r = canvas.getBoundingClientRect();
+    Object.assign(overlay.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  };
+  const renderCompareUI = () => {
+    overlay.hidden = !compareTab;
+    if (!compareTab) return;
+    placeOverlay();
+    line.style.left = `${viewer.compare.split * 100}%`;
+    overlay.querySelector('.cmp-label.a').textContent = `A · ${active.name}`;
+    overlay.querySelector('.cmp-label.b').textContent = `B · ${compareTab.name}`;
+    overlay.querySelector('.cmp-reset').hidden = !viewer.hasOffsets();
+  };
+  new ResizeObserver(() => compareTab && placeOverlay()).observe(canvas);
+  line.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    line.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const r = canvas.getBoundingClientRect();
+      viewer.setSplit((ev.clientX - r.left) / r.width);
+      renderCompareUI();
+    };
+    line.addEventListener('pointermove', move);
+    line.addEventListener('pointerup', () => line.removeEventListener('pointermove', move), { once: true });
+  });
+  line.addEventListener('dblclick', () => { viewer.setSplit(0.5); renderCompareUI(); });
+  overlay.querySelector('.cmp-reset').addEventListener('click', () => { viewer.resetOffsets(); renderCompareUI(); });
+  // Offsets are set while Alt is held: show "reset" once it's released.
+  addEventListener('keyup', (e) => { if (e.key === 'Alt') setTimeout(renderCompareUI); });
+
+  async function setCompareTab(tab) {
+    compareTab = tab;
+    viewer.setCompare(tab ? await viewer.getModel(tab.url, tab.kind) : null);
+    renderTabs();
+    renderCompareUI();
+  }
+  function toggleCompare() {
+    queue = queue.then(() => {
+      if (compareTab) return setCompareTab(null);
+      const b = prevTab && tabs.includes(prevTab) && prevTab !== active ? prevTab : tabs.find((t) => t !== active);
+      return b ? setCompareTab(b) : flash('Для сравнения нужна вторая вкладка: перетащите файл');
+    }).catch((e) => flash(e.message));
+  }
+  function chooseB(tab) {
+    if (tab === active || tab === compareTab) return;
+    queue = queue.then(() => setCompareTab(tab)).catch((e) => flash(e.message));
+  }
+
+  // --- animation: which clip, pause ---------------------------------------------
+  const anim = Object.assign(document.createElement('div'), { id: 'anim', hidden: true });
+  anim.innerHTML = `
+    <button class="anim-play" title="Пауза / воспроизведение (пробел)"></button>
+    <select class="anim-clip" title="Клип анимации (при сравнении B играет клип с тем же именем)"></select>`;
+  document.body.append(anim);
+  const playButton = anim.querySelector('.anim-play');
+  const clipSelect = anim.querySelector('.anim-clip');
+  const placeAnim = () => {
+    const r = canvas.getBoundingClientRect();
+    Object.assign(anim.style, { left: `${r.left + 10}px`, top: `${r.bottom - 38}px` });
+  };
+  const renderAnim = () => {
+    const clips = viewer.gltf?.animations ?? [];
+    anim.hidden = !clips.length;
+    if (!clips.length) return;
+    placeAnim();
+    clipSelect.replaceChildren(
+      ...clips.map((c, i) => new Option(c.name || `Клип ${i + 1}`, c.name)),
+      ...(clips.length > 1 ? [new Option('Все клипы вместе', ALL_CLIPS)] : []),
+    );
+    clipSelect.value = viewer.currentClip();
+    playButton.textContent = viewer.paused ? '▶' : '❚❚';
+  };
+  clipSelect.addEventListener('change', () => {
+    viewer.setClip(clipSelect.value);
+    renderAnim();
+  });
+  const togglePause = () => {
+    viewer.paused = !viewer.paused;
+    renderAnim();
+  };
+  playButton.addEventListener('click', togglePause);
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || anim.hidden || e.target.closest?.('input, select, textarea, button')) return;
+    e.preventDefault();
+    togglePause();
+  });
+  viewer.modelListeners.add(() => renderAnim());
+  new ResizeObserver(() => !anim.hidden && placeAnim()).observe(canvas);
+  addEventListener('resize', () => !anim.hidden && placeAnim());
+  renderAnim();
 
   bindDrop((file) => {
     const kind = fileKind(file.name);
@@ -247,7 +367,9 @@ async function main() {
   renderTabs();
 
   const params = new URLSearchParams(location.search);
-  if (params.has('debug')) window.izv = { viewer, store, tabs, get active() { return active; }, get editor() { return editor; } };
+  if (params.has('debug')) {
+    window.izv = { viewer, store, tabs, get active() { return active; }, get compareTab() { return compareTab; }, get editor() { return editor; } };
+  }
   if (params.has('edit')) await openEditor();
 
   if (s.standalone) return;

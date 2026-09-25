@@ -1,6 +1,6 @@
 import {
-  AnimationMixer, Box3, Clock, Color, MathUtils, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3,
-  WebGLRenderer,
+  AnimationMixer, Box3, Clock, Color, MathUtils, PerspectiveCamera, Raycaster, Scene, Spherical, SRGBColorSpace, Vector2,
+  Vector3, WebGLRenderer,
 } from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -12,6 +12,24 @@ import { applyToneMapping } from './toneMapping.js';
 import { loadEnvironment } from './environment.js';
 import { createTransparency } from './transparency.js';
 import { materialsByName, patchMaterial } from './materials.js';
+
+const _sph = new Spherical();
+const _sph2 = new Spherical();
+const _v = new Vector3();
+const _t = new Vector3();
+
+// A side's camera = the shared camera + this offset (orbit angles, zoom ratio, target shift).
+const zeroOffset = () => ({ theta: 0, phi: 0, zoom: 1, target: new Vector3() });
+const isZeroOffset = (o) => !o.theta && !o.phi && o.zoom === 1 && o.target.lengthSq() === 0;
+
+export const ALL_CLIPS = '*';
+
+// One clip by name (default: the first, like model-viewer), or all at once for per-object actions.
+function pickClips(clips = [], name) {
+  if (!clips.length) return [];
+  if (name === ALL_CLIPS) return clips;
+  return [clips.find((c) => c.name === name) ?? clips[0]];
+}
 
 function disposeTree(root) {
   root.traverse((obj) => {
@@ -41,6 +59,16 @@ export class Viewer {
     this.clock = new Clock();
     this.mixer = null;
 
+    // Compare (wipe): B lives in its own scene sharing background/environment; each side its own camera.
+    this.sceneB = new Scene();
+    this.transparencyB = createTransparency(this.renderer);
+    this.camA = this.camera.clone();
+    this.camB = this.camera.clone();
+    this.driver = this.camera.clone();
+    this.compare = null;
+    this.alt = null;
+    this.bindAlt(canvas);
+
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.renderer.setAnimationLoop(() => this.frame());
   }
@@ -54,12 +82,148 @@ export class Viewer {
   }
 
   frame() {
-    const dt = this.clock.getDelta();
-    this.mixer?.update(dt);
+    const dt = this.paused ? (this.clock.getDelta(), 0) : this.clock.getDelta();
     this.controls.update();
+    if (this.compare) {
+      this.syncAnimations(dt);
+      this.renderCompare();
+      return;
+    }
+    this.mixer?.update(dt);
     this.transparency.update(this.camera);
     this.renderer.render(this.scene, this.camera);
     if (this.bloomOn) this.bloom.render(this.scene, this.camera);
+  }
+
+  // --- compare ---------------------------------------------------------------
+
+  // gltfB: the other tab's model (cached, never disposed here); null ends the comparison.
+  setCompare(gltfB) {
+    this.endAlt();
+    const prev = this.compare;
+    if (prev?.model && prev.model !== gltfB?.scene && prev.model.parent === this.sceneB) this.sceneB.remove(prev.model);
+    prev?.mixer?.stopAllAction();
+    if (!gltfB) {
+      this.compare = null;
+      return;
+    }
+    this.sceneB.add(gltfB.scene);
+    const clips = gltfB.animations ?? [];
+    this.compare = {
+      model: gltfB.scene, clips, actions: [], mixer: clips.length ? new AnimationMixer(gltfB.scene) : null,
+      split: prev?.split ?? 0.5,
+      offsets: prev?.offsets ?? { a: zeroOffset(), b: zeroOffset() },
+    };
+    this.playCompareClips();
+    if (this.transparencyMode) this.transparencyB.apply(gltfB.scene, this.transparencyMode);
+    gltfB.scene.traverse((o) => { if (o.isLight) o.visible = this.lightsVisible; });
+  }
+
+  setSplit(x) {
+    if (this.compare) this.compare.split = MathUtils.clamp(x, 0, 1);
+  }
+
+  resetOffsets() {
+    if (!this.compare) return;
+    this.endAlt();
+    this.compare.offsets = { a: zeroOffset(), b: zeroOffset() };
+  }
+
+  hasOffsets() {
+    return Boolean(this.compare) && !(isZeroOffset(this.compare.offsets.a) && isZeroOffset(this.compare.offsets.b));
+  }
+
+  sideAt(clientX) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return (clientX - rect.left) / rect.width < this.compare.split ? 'a' : 'b';
+  }
+
+  placeCamera(cam, offset) {
+    const target = this.alt ? this.alt.baseTarget : this.controls.target;
+    _sph.setFromVector3(_v.copy(this.camera.position).sub(target));
+    _sph.theta += offset.theta;
+    _sph.phi = MathUtils.clamp(_sph.phi + offset.phi, 1e-4, Math.PI - 1e-4);
+    _sph.radius *= offset.zoom;
+    _t.copy(target).add(offset.target);
+    cam.position.setFromSpherical(_sph).add(_t);
+    cam.up.copy(this.camera.up);
+    cam.lookAt(_t);
+    cam.projectionMatrix.copy(this.camera.projectionMatrix);
+    cam.projectionMatrixInverse.copy(this.camera.projectionMatrixInverse);
+    cam.updateMatrixWorld();
+  }
+
+  // Offset of the Alt driver from the shared camera.
+  driverOffset() {
+    const { baseTarget } = this.alt;
+    _sph.setFromVector3(_v.copy(this.camera.position).sub(baseTarget));
+    _sph2.setFromVector3(_v.copy(this.driver.position).sub(this.controls.target));
+    return {
+      theta: _sph2.theta - _sph.theta,
+      phi: _sph2.phi - _sph.phi,
+      zoom: _sph2.radius / _sph.radius,
+      target: this.controls.target.clone().sub(baseTarget),
+    };
+  }
+
+  renderCompare() {
+    const { offsets, split } = this.compare;
+    if (this.alt) offsets[this.alt.side] = this.driverOffset();
+    this.placeCamera(this.camA, offsets.a);
+    this.placeCamera(this.camB, offsets.b);
+
+    const r = this.renderer;
+    const { clientWidth: w, clientHeight: h } = r.domElement;
+    const x = Math.round(w * split);
+    this.sceneB.background = this.scene.background;
+    this.sceneB.environment = this.scene.environment;
+    this.sceneB.environmentRotation.copy(this.scene.environmentRotation);
+
+    r.setScissorTest(true);
+    r.setScissor(0, 0, x, h);
+    this.transparency.update(this.camA);
+    r.render(this.scene, this.camA);
+    r.setScissor(x, 0, w - x, h);
+    this.transparencyB.update(this.camB);
+    r.render(this.sceneB, this.camB);
+    r.setScissorTest(false);
+  }
+
+  // Alt + mouse: orbit only the side under the cursor (its own offset). Alt released: back to shared orbit.
+  bindAlt(canvas) {
+    const start = (e) => {
+      if (!this.compare || !e.altKey || this.alt) return;
+      e.preventDefault();
+      this.beginAlt(this.sideAt(e.clientX));
+    };
+    canvas.addEventListener('pointerdown', start, { capture: true });
+    canvas.addEventListener('wheel', start, { capture: true, passive: false });
+    addEventListener('keydown', (e) => { if (e.key === 'Alt' && this.compare) e.preventDefault(); });
+    addEventListener('keyup', (e) => { if (e.key === 'Alt') this.endAlt(); });
+    addEventListener('blur', () => this.endAlt());
+  }
+
+  beginAlt(side) {
+    const cam = side === 'a' ? this.camA : this.camB;
+    const baseTarget = this.controls.target.clone();
+    this.alt = { side, baseTarget };
+    this.driver.position.copy(cam.position);
+    this.driver.quaternion.copy(cam.quaternion);
+    this.controls.object = this.driver;
+    this.controls.target.copy(baseTarget).add(this.compare.offsets[side].target);
+  }
+
+  endAlt() {
+    if (!this.alt) return;
+    // Flush the driver's inertia so it doesn't spill onto the shared camera.
+    const damping = this.controls.enableDamping;
+    this.controls.enableDamping = false;
+    this.controls.update();
+    this.controls.enableDamping = damping;
+    this.compare.offsets[this.alt.side] = this.driverOffset();
+    this.controls.object = this.camera;
+    this.controls.target.copy(this.alt.baseTarget);
+    this.alt = null;
   }
 
   setBloom({ bloom, bloomStrength, bloomRadius, bloomThreshold }) {
@@ -77,11 +241,10 @@ export class Viewer {
 
   // kind: 'gltf' (GLB) or 'usd' (USDZ/USDA/USDC, view only: no parser, so the editor can't bind it).
   // keep: cache the parsed model for tab switching (editor rebuilds pass temporary URLs and don't).
-  async loadModel(url, kind = 'gltf', { keep = false } = {}) {
+  async getModel(url, kind = 'gltf', keep = true) {
     let gltf = this.cache.get(url);
-    if (gltf) {
-      // reused as is
-    } else if (kind === 'usd') {
+    if (gltf) return gltf;
+    if (kind === 'usd') {
       const { USDLoader } = await import('three/addons/loaders/USDLoader.js');
       const group = await new USDLoader().loadAsync(url);
       gltf = { scene: group, animations: group.animations ?? [], parser: null };
@@ -92,6 +255,11 @@ export class Viewer {
       gltf = await this.loader.loadAsync(url);
     }
     if (keep) this.cache.set(url, gltf);
+    return gltf;
+  }
+
+  async loadModel(url, kind = 'gltf', { keep = false } = {}) {
+    const gltf = await this.getModel(url, kind, keep);
     if (this.model && this.model !== gltf.scene) {
       this.mixer?.stopAllAction();
       this.scene.remove(this.model);
@@ -120,14 +288,50 @@ export class Viewer {
     const gltf = this.cache.get(url);
     if (!gltf) return;
     this.cache.delete(url);
-    if (gltf.scene !== this.model) disposeTree(gltf.scene);
+    if (gltf.scene !== this.model && gltf.scene !== this.compare?.model) disposeTree(gltf.scene);
   }
 
   // All clips at once: Blender exports one clip per object action, and they belong together.
+  clipName = null; // null = first clip, ALL_CLIPS = all together
+  paused = false;
+
   playAnimations(clips = []) {
     this.mixer = clips.length ? new AnimationMixer(this.model) : null;
-    for (const clip of clips) this.mixer.clipAction(clip).play();
+    this.actions = pickClips(clips, this.clipName).map((clip) => this.mixer.clipAction(clip).play());
     this.clock.getDelta();
+    this.compareTime = 0;
+    if (this.compare) this.playCompareClips();
+  }
+
+  // Name of what A plays (B follows it), or ALL_CLIPS.
+  currentClip() {
+    if (this.clipName === ALL_CLIPS) return ALL_CLIPS;
+    return this.actions?.[0]?.getClip().name ?? null;
+  }
+
+  setClip(name) {
+    this.clipName = name;
+    this.mixer?.stopAllAction();
+    this.playAnimations(this.gltf?.animations);
+  }
+
+  playCompareClips() {
+    const c = this.compare;
+    c.mixer?.stopAllAction();
+    c.actions = pickClips(c.clips, this.currentClip()).map((clip) => c.mixer.clipAction(clip).play());
+    this.compareTime = 0;
+  }
+
+  // Compare: A and B run on one timeline, looping over the longest clip of both;
+  // a shorter clip holds its last pose, so both sides are always in the same phase.
+  syncAnimations(dt) {
+    const actions = [...(this.actions ?? []), ...this.compare.actions];
+    if (!actions.length) return;
+    const period = Math.max(...actions.map((a) => a.getClip().duration)) || 1;
+    this.compareTime = ((this.compareTime ?? 0) + dt) % period;
+    for (const a of actions) a.time = Math.min(this.compareTime, a.getClip().duration * 0.99999);
+    this.mixer?.update(0);
+    this.compare.mixer?.update(0);
   }
 
   // model-viewer ignores KHR_lights_punctual: hidden by default so both look the same.
@@ -135,9 +339,11 @@ export class Viewer {
 
   setLightsVisible(on) {
     this.lightsVisible = on;
-    this.model?.traverse((o) => {
-      if (o.isLight) o.visible = on;
-    });
+    for (const root of [this.model, this.compare?.model]) {
+      root?.traverse((o) => {
+        if (o.isLight) o.visible = on;
+      });
+    }
   }
 
   refreshTransparency() {
@@ -150,7 +356,9 @@ export class Viewer {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster ??= new Raycaster();
-    this.raycaster.setFromCamera(ndc, this.camera);
+    // Compare: only side A (the editable tab) is pickable.
+    if (this.compare && this.sideAt(clientX) === 'b') return null;
+    this.raycaster.setFromCamera(ndc, this.compare ? this.camA : this.camera);
     const hit = this.raycaster.intersectObject(this.model, true).find((h) => h.object.isMesh && !h.object.userData.izvPrepass);
     if (!hit) return null;
     const mats = Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material];
@@ -195,6 +403,7 @@ export class Viewer {
     if (this.model && state.transparency !== prev.transparency) {
       this.transparencyMode = state.transparency;
       this.transparency.apply(this.model, state.transparency);
+      if (this.compare) this.transparencyB.apply(this.compare.model, state.transparency);
     }
   }
 

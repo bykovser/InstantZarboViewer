@@ -117,3 +117,52 @@ body.editing #tabs {
 #tabs .tab-kind { font-size: 10px; padding: 0 4px; border-radius: 3px; background: #ffffff1f; }
 #tabs .tab-close { padding: 0 3px; border-radius: 3px; opacity: 0.6; }
 #tabs .tab-close:hover { opacity: 1; background: #ffffff26; }
+
+#tabs .tab.b { box-shadow: inset 0 0 0 1px #e8a25c; color: #f0c08e; }
+#tabs .tab.compare { font-size: 14px; padding: 2px 8px; }
+#tabs .tab.compare.active { background: #e8a25c; color: #1e1f22; }
+
+#compare { position: fixed; z-index: 4; pointer-events: none; font: 12px system-ui, sans-serif; }
+#compare[hidden] { display: none; }
+#compare .cmp-line {
+  position: absolute; top: 0; bottom: 0; width: 14px; margin-left: -7px;
+  cursor: col-resize; pointer-events: auto; touch-action: none;
+}
+#compare .cmp-line::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 6px; width: 2px;
+  background: #fff; box-shadow: 0 0 0 1px #0005;
+}
+#compare .cmp-handle {
+  position: absolute; top: 50%; left: 50%; width: 22px; height: 38px; transform: translate(-50%, -50%);
+  border-radius: 11px; background: #fff; box-shadow: 0 1px 6px #0006;
+}
+#compare .cmp-handle::before {
+  content: '‹ ›'; position: absolute; inset: 0; display: grid; place-items: center; color: #555; font-size: 13px; letter-spacing: -1px;
+}
+#compare .cmp-label {
+  position: absolute; bottom: 48px; padding: 2px 8px; border-radius: 4px;
+  background: #1e1f22cc; color: #fff; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#compare .cmp-label.a { left: 10px; }
+#compare .cmp-label.b { right: 10px; box-shadow: inset 0 0 0 1px #e8a25c; }
+#compare .cmp-bar {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px; align-items: center; white-space: nowrap;
+}
+#compare .cmp-hint { padding: 2px 8px; border-radius: 4px; background: #1e1f22b3; color: #cfd2d8; }
+#compare .cmp-reset {
+  pointer-events: auto; border: 0; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  background: #e8a25c; color: #1e1f22; font: inherit;
+}
+#compare .cmp-reset[hidden] { display: none; }
+
+#anim {
+  position: fixed; z-index: 5; display: flex; gap: 4px; align-items: center;
+  padding: 3px; border-radius: 6px; background: #1e1f22e6; font: 12px system-ui, sans-serif;
+}
+#anim[hidden] { display: none; }
+#anim button, #anim select {
+  height: 22px; border: 1px solid #36383d; border-radius: 4px; background: #33363b; color: #d7d9de; font: inherit;
+}
+#anim button { width: 28px; padding: 0; cursor: pointer; }
+#anim select { max-width: 180px; }

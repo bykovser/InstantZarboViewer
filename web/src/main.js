@@ -82,31 +82,56 @@ async function main() {
 
   const s = store.get();
   status.textContent = 'Загрузка…';
-  await Promise.all([viewer.loadModel(s.model), viewer.setEnvironment(s.environment, s.environmentRotation)]);
+  await Promise.all([viewer.loadModel(s.model, 'gltf', { keep: true }), viewer.setEnvironment(s.environment, s.environmentRotation)]);
   viewer.frameCamera(s.camera);
   store.subscribe((state, prev) => viewer.apply(state, prev));
   status.textContent = '';
   showUsdz(s.usdz);
 
-  // What the viewport shows now: the Blender session file, or a dropped file.
-  let current = { url: s.model, name: undefined, kind: 'gltf' };
+  // Tabs: the Blender session (or ?model=) plus dropped files. Switching keeps the camera for A/B comparison.
+  let seq = 0;
+  const baseName = (url) => decodeURIComponent(url.split('/').pop().split('?')[0]);
+  const tabs = [{
+    id: ++seq, url: s.model, kind: 'gltf', usdz: s.usdz ?? null,
+    blender: !s.standalone, name: s.standalone ? baseName(s.model) : 'Blender',
+  }];
+  let active = tabs[0];
   // Latest Blender export, kept even while sync is off so "revert" can pull it.
   let blenderScene = s.standalone ? null : s;
-  let blenderPending = false;
   const syncing = () => !editor || store.get().syncBlender;
+
+  const tabBar = Object.assign(document.createElement('nav'), { id: 'tabs' });
+  document.body.append(tabBar);
+  const renderTabs = () => {
+    tabBar.hidden = tabs.length < 2;
+    tabBar.replaceChildren(...tabs.map((tab, i) => {
+      const el = document.createElement('button');
+      el.className = `tab ${tab === active ? 'active' : ''} ${tab.fresh ? 'fresh' : ''}`;
+      el.title = `${tab.name}${i < 9 ? ` — клавиша ${i + 1}` : ''}`;
+      el.append(Object.assign(document.createElement('span'), { className: 'tab-name', textContent: `${i + 1} · ${tab.name}` }));
+      if (tab.kind === 'usd') el.append(Object.assign(document.createElement('span'), { className: 'tab-kind', textContent: 'USD' }));
+      if (!tab.blender && tabs.length > 1) {
+        const x = Object.assign(document.createElement('span'), { className: 'tab-close', textContent: '×', title: 'Закрыть вкладку' });
+        x.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab); });
+        el.append(x);
+      }
+      el.addEventListener('click', () => switchTab(tab));
+      return el;
+    }));
+  };
 
   // Editor: separate chunk, desktop only (button hidden on narrow screens by CSS).
   let editor = null;
   const openEditor = async () => {
     if (editor) return;
-    if (current.kind === 'usd') {
+    if (active.kind === 'usd') {
       flash('USDZ — только просмотр: редактор работает с GLB');
       return;
     }
     editButton.disabled = true;
     const { mountEditor } = await import('./editor/index.jsx');
     editor = await mountEditor({
-      viewer, store, modelUrl: current.url, modelName: current.name, onClose: closeEditor,
+      viewer, store, modelUrl: active.url, modelName: active.blender ? undefined : active.name, onClose: closeEditor,
       actions: { revert: () => revert(), hasBlender: Boolean(blenderScene) },
     });
   };
@@ -121,27 +146,80 @@ async function main() {
   });
   let queue = Promise.resolve();
 
-  const loadBlenderScene = async (next) => {
-    await Promise.all([viewer.loadModel(next.model), viewer.setEnvironment(next.environment, next.environmentRotation)]);
-    if (current.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
-    current = { url: next.model, name: undefined, kind: 'gltf' };
-    blenderPending = false;
-    store.set(next);
-    showUsdz(next.usdz);
-    if (editor) await editor.model.load(next.model);
+  const editorTouched = () => Boolean(editor && (editor.model.history.value.undo || editor.model.history.value.redo));
+
+  // Show a tab. Editor edits die with the switch: live patches changed the cached scene, so it's dropped.
+  const activate = async (tab, { frame = false } = {}) => {
+    if (editorTouched()) viewer.forget(active.url);
+    if (tab.kind === 'usd') closeEditor();
+    status.textContent = `Загрузка ${tab.name}…`;
+    await viewer.loadModel(tab.url, tab.kind, { keep: true });
+    if (frame) viewer.frameCamera(null);
+    active = tab;
+    tab.fresh = false;
+    if (editor) await editor.model.load(tab.url, tab.blender ? undefined : tab.name);
+    showUsdz(tab.usdz);
+    status.textContent = '';
+    renderTabs();
   };
 
-  // Drop the editor's changes: back to the latest Blender export, or to the file as opened/dropped.
-  const revert = () => {
+  const confirmDropEdits = (what) => {
     const edits = editor?.model.history.value.undo ?? 0;
-    if (edits && !confirm(`Сбросить правки редактора (${edits})?`)) return;
+    return !edits || confirm(`${what}: правки редактора (${edits}) будут сброшены. Продолжить?`);
+  };
+
+  const switchTab = (tab) => {
+    if (tab === active || !confirmDropEdits('Переключение вкладки')) return;
+    queue = queue.then(() => activate(tab)).catch((e) => flash(e.message));
+  };
+
+  const closeTab = (tab) => {
+    if (tab.blender) return;
+    if (tab === active && !confirmDropEdits('Закрытие вкладки')) return;
+    queue = queue.then(async () => {
+      const i = tabs.indexOf(tab);
+      if (tab === active) await activate(tabs[i + 1] ?? tabs[i - 1]);
+      tabs.splice(tabs.indexOf(tab), 1);
+      viewer.forget(tab.url);
+      if (tab.url.startsWith('blob:')) URL.revokeObjectURL(tab.url);
+      renderTabs();
+    }).catch((e) => flash(e.message));
+  };
+
+  addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= 9 && tabs[n - 1]) switchTab(tabs[n - 1]);
+  });
+
+  // New Blender export: the Blender tab gets the new file; loaded now only if it's the one on screen.
+  const loadBlenderScene = async (next) => {
+    const tab = tabs.find((t) => t.blender);
+    if (tab.url !== next.model) viewer.forget(tab.url);
+    Object.assign(tab, { url: next.model, usdz: next.usdz ?? null });
+    store.set(next);
+    if (active === tab) {
+      await Promise.all([viewer.loadModel(next.model, 'gltf', { keep: true }), viewer.setEnvironment(next.environment, next.environmentRotation)]);
+      showUsdz(tab.usdz);
+      if (editor) await editor.model.load(next.model);
+    } else {
+      await viewer.setEnvironment(next.environment, next.environmentRotation);
+      tab.fresh = true;
+    }
+    renderTabs();
+  };
+
+  // Drop the editor's changes on the active tab: latest Blender export, or the file as opened/dropped.
+  const revert = () => {
+    if (!confirmDropEdits('Откат')) return;
     queue = queue.then(async () => {
       status.textContent = 'Откат…';
-      if (blenderScene && (current.kind === 'gltf' && !current.url.startsWith('blob:') || blenderPending)) {
+      viewer.forget(active.url);
+      if (active.blender && blenderScene) {
         await loadBlenderScene(blenderScene);
       } else {
-        await viewer.loadModel(current.url, current.kind);
-        if (editor) await editor.model.load(current.url, current.name);
+        await viewer.loadModel(active.url, active.kind, { keep: true });
+        if (editor) await editor.model.load(active.url, active.blender ? undefined : active.name);
       }
       flash('Откат: правки редактора сброшены');
     }).catch((e) => flash(e.message));
@@ -153,43 +231,47 @@ async function main() {
       flash(`${file.name}: нужен .glb или .usdz`);
       return;
     }
+    if (!confirmDropEdits('Новая вкладка')) return;
+    const url = URL.createObjectURL(file);
+    const tab = { id: ++seq, url, kind, name: file.name, usdz: kind === 'usd' && /\.usdz$/i.test(file.name) ? url : null };
     queue = queue.then(async () => {
-      status.textContent = `Загрузка ${file.name}…`;
-      const url = URL.createObjectURL(file);
-      if (kind === 'usd') closeEditor();
-      await viewer.loadModel(url, kind);
-      viewer.frameCamera(null);
-      if (editor) await editor.model.load(url, file.name);
-      if (current.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
-      current = { url, name: file.name, kind };
-      showUsdz(kind === 'usd' && file.name.toLowerCase().endsWith('.usdz') ? url : null);
+      await activate(tab, { frame: true });
+      tabs.push(tab);
+      renderTabs();
       flash(kind === 'usd' ? `${file.name}: только просмотр` : file.name);
-    }).catch((e) => flash(`${file.name}: ${e.message}`));
+    }).catch((e) => {
+      URL.revokeObjectURL(url);
+      flash(`${file.name}: ${e.message}`);
+    });
   });
+  renderTabs();
 
   const params = new URLSearchParams(location.search);
-  if (params.has('debug')) window.izv = { viewer, store, get editor() { return editor; } };
+  if (params.has('debug')) window.izv = { viewer, store, tabs, get active() { return active; }, get editor() { return editor; } };
   if (params.has('edit')) await openEditor();
 
   if (s.standalone) return;
 
   connectLive({
-    // Re-export: new file, same tab, camera stays where the user left it.
+    // Re-export: new file for the Blender tab, camera stays where the user left it.
     scene: (next) => {
       blenderScene = next;
       if (!syncing()) {
-        blenderPending = true;
         flash('Blender переэкспортировал модель — синк выключен, «Откат» подтянет её');
         return;
       }
       queue = queue.then(async () => {
-        status.textContent = 'Обновление…';
+        const onScreen = active.blender;
+        if (onScreen) status.textContent = 'Обновление…';
         await loadBlenderScene(next);
-        flash(editor ? 'Модель обновлена из Blender, правки в редакторе сброшены' : 'Модель обновлена');
+        status.textContent = '';
+        flash(!onScreen ? 'Blender обновил модель — во вкладке «Blender»'
+          : editor ? 'Модель обновлена из Blender, правки в редакторе сброшены' : 'Модель обновлена');
       }).catch((e) => flash(e.message));
     },
+    // Material patches only make sense for the Blender tab.
     material: (patches) => {
-      if (!syncing()) return;
+      if (!syncing() || !active.blender) return;
       queue.then(() => {
         if (editor) {
           const missing = editor.model.applyBlenderPatches(patches);

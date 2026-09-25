@@ -72,10 +72,16 @@ export class Viewer {
     this.bloom.set({ strength: bloomStrength, radius: bloomRadius, threshold: bloomThreshold });
   }
 
+  // Parsed models of open tabs: switching back is instant and keeps nothing but the scene graph.
+  cache = new Map(); // url -> gltf
+
   // kind: 'gltf' (GLB) or 'usd' (USDZ/USDA/USDC, view only: no parser, so the editor can't bind it).
-  async loadModel(url, kind = 'gltf') {
-    let gltf;
-    if (kind === 'usd') {
+  // keep: cache the parsed model for tab switching (editor rebuilds pass temporary URLs and don't).
+  async loadModel(url, kind = 'gltf', { keep = false } = {}) {
+    let gltf = this.cache.get(url);
+    if (gltf) {
+      // reused as is
+    } else if (kind === 'usd') {
       const { USDLoader } = await import('three/addons/loaders/USDLoader.js');
       const group = await new USDLoader().loadAsync(url);
       gltf = { scene: group, animations: group.animations ?? [], parser: null };
@@ -85,10 +91,11 @@ export class Viewer {
         .setDRACOLoader(new DRACOLoader().setDecoderPath('./draco/'));
       gltf = await this.loader.loadAsync(url);
     }
-    if (this.model) {
+    if (keep) this.cache.set(url, gltf);
+    if (this.model && this.model !== gltf.scene) {
       this.mixer?.stopAllAction();
       this.scene.remove(this.model);
-      disposeTree(this.model);
+      if (!this.isCached(this.model)) disposeTree(this.model);
     }
     this.gltf = gltf;
     this.kind = kind;
@@ -102,6 +109,19 @@ export class Viewer {
   }
 
   modelListeners = new Set();
+
+  isCached(scene) {
+    for (const g of this.cache.values()) if (g.scene === scene) return true;
+    return false;
+  }
+
+  // Drop a cached model (tab closed or its file is stale). The one on screen stays until replaced.
+  forget(url) {
+    const gltf = this.cache.get(url);
+    if (!gltf) return;
+    this.cache.delete(url);
+    if (gltf.scene !== this.model) disposeTree(gltf.scene);
+  }
 
   // All clips at once: Blender exports one clip per object action, and they belong together.
   playAnimations(clips = []) {

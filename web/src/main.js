@@ -320,6 +320,10 @@ async function main() {
     <div class="cmp-line" title="Потяните; двойной клик — по центру"><span class="cmp-handle"></span></div>
     <span class="cmp-label a"></span><span class="cmp-label b"></span>
     <div class="cmp-bar">
+      <span class="cmp-modes">
+        <button class="cmp-mode wipe active" title="Шторка">Шторка</button>
+        <button class="cmp-mode side" title="Рядом">Рядом</button>
+      </span>
       <span class="cmp-hint">Alt + мышь — своя камера у стороны · Shift+клик по вкладке — сторона B</span>
       <button class="cmp-reset" hidden>Сбросить смещения камер</button>
     </div>`;
@@ -330,15 +334,22 @@ async function main() {
     const r = canvas.getBoundingClientRect();
     Object.assign(overlay.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
   };
+  const modeButtons = overlay.querySelectorAll('.cmp-mode');
   const renderCompareUI = () => {
     overlay.hidden = !compareTab;
     if (!compareTab) return;
     placeOverlay();
+    const side = viewer.compare.mode === 'side';
+    overlay.classList.toggle('side', side);
     line.style.left = `${viewer.compare.split * 100}%`;
     overlay.querySelector('.cmp-label.a').textContent = `A · ${active.name}`;
     overlay.querySelector('.cmp-label.b').textContent = `B · ${compareTab.name}`;
-    overlay.querySelector('.cmp-reset').hidden = !viewer.hasOffsets();
+    overlay.querySelector('.cmp-reset').hidden = side || !viewer.hasOffsets();
+    for (const b of modeButtons) b.classList.toggle('active', b.classList.contains(side ? 'side' : 'wipe'));
   };
+  for (const b of modeButtons) {
+    b.addEventListener('click', () => { viewer.setCompareMode(b.classList.contains('side') ? 'side' : 'wipe'); renderCompareUI(); });
+  }
   new ResizeObserver(() => compareTab && placeOverlay()).observe(canvas);
   line.addEventListener('pointerdown', (e) => {
     e.preventDefault();

@@ -78,7 +78,11 @@ export function ExportPanel({ model }) {
         <Row label="Геометрия">
           <Select
             value={opts.geometry}
-            options={[{ value: 'none', label: 'Без сжатия' }, { value: 'meshopt', label: 'Meshopt (EXT_meshopt)' }]}
+            options={[
+              { value: 'none', label: 'Без сжатия' },
+              { value: 'meshopt', label: 'Meshopt (EXT_meshopt)' },
+              { value: 'draco', label: 'Draco (KHR_draco_mesh_compression)' },
+            ]}
             onChange={(v) => set({ geometry: v })}
           />
         </Row>
@@ -101,7 +105,7 @@ export function ExportPanel({ model }) {
         )}
         <button class="primary" onClick={run} disabled={Boolean(model.busy.value)}>Скачать GLB</button>
         {result && <p class="muted">{result}</p>}
-        <p class="muted">Неиспользуемые текстуры и дубликаты удаляются при экспорте. Draco — позже.</p>
+        <p class="muted">Неиспользуемые текстуры и дубликаты удаляются при экспорте.</p>
       </Section>
     </div>
   );

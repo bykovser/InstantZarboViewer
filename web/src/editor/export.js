@@ -5,11 +5,35 @@ import { MeshoptEncoder } from 'meshoptimizer';
 import { writeGLB } from './io.js';
 
 export const EXPORT_DEFAULTS = {
-  geometry: 'none', // none | meshopt
+  geometry: 'none', // none | meshopt | draco
   textureFormat: 'keep', // keep | webp | jpeg
   maxSize: 0, // 0 = keep
   quality: 0.9,
 };
+
+// The Draco *encoder* (legacy asm.js build, see web/public/draco/draco_encoder.js) collides with
+// the Draco *decoder* already initialized on the main thread by io.js's getIO() when loaded into
+// the same window scope, so it's encoded off-thread in a dedicated worker instead.
+let dracoWorker = null;
+function encodeDraco(glb) {
+  dracoWorker ??= new Worker(new URL('./dracoWorker.js', import.meta.url));
+  return new Promise((resolve, reject) => {
+    const onMessage = (e) => {
+      dracoWorker.removeEventListener('message', onMessage);
+      dracoWorker.removeEventListener('error', onError);
+      if (e.data.error) reject(new Error(e.data.error));
+      else resolve(new Uint8Array(e.data.glb));
+    };
+    const onError = (e) => {
+      dracoWorker.removeEventListener('message', onMessage);
+      dracoWorker.removeEventListener('error', onError);
+      reject(new Error(e.message || 'Draco worker error'));
+    };
+    dracoWorker.addEventListener('message', onMessage);
+    dracoWorker.addEventListener('error', onError);
+    dracoWorker.postMessage({ glb: glb.buffer }, [glb.buffer]);
+  });
+}
 
 const CANVAS_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
@@ -56,5 +80,6 @@ export async function exportGLB(model, options) {
   if (options.geometry === 'meshopt') {
     await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
   }
-  return writeGLB(doc);
+  const glb = await writeGLB(doc);
+  return options.geometry === 'draco' ? encodeDraco(glb) : glb;
 }

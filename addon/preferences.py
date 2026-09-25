@@ -12,7 +12,7 @@ def get(context=None) -> "IZV_Preferences":
 class IZV_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    port: IntProperty(name="Port", default=8080, min=1024, max=65535)
+    port: IntProperty(name="Port", default=8090, min=1024, max=65535)
     use_https: BoolProperty(
         name="HTTPS",
         description="Needed for WebXR/camera on phones; uses a self-signed certificate",

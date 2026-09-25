@@ -17,6 +17,16 @@ _scheme = "http"
 
 
 class Handler(SimpleHTTPRequestHandler):
+    # Safari opens Quick Look only for the proper USDZ type; octet-stream just downloads.
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".usdz": "model/vnd.usdz+zip",
+        ".glb": "model/gltf-binary",
+        ".hdr": "image/vnd.radiance",
+        ".exr": "image/x-exr",
+        ".wasm": "application/wasm",
+    }
+
     def __init__(self, *args, session_dir: Path, **kwargs):
         self.session_dir = session_dir
         super().__init__(*args, directory=str(WEB_DIST), **kwargs)

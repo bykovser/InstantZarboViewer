@@ -10,6 +10,7 @@ Fixes from MaxConverter (verified with ComplianceChecker(arkit=True)):
 """
 import json
 import math
+import shutil
 import sys
 from pathlib import Path
 
@@ -121,7 +122,10 @@ def main():
         only_deform_bones=True,
         export_shapekeys=animation,
     ))
-    package_usdz(work / f"{dst.stem}.usdc", dst)
+    try:
+        package_usdz(work / f"{dst.stem}.usdc", dst)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     print("IZV_RESULT " + json.dumps({"path": str(dst), "arkit": check_arkit(dst)}))
 
 

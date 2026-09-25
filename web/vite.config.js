@@ -7,6 +7,11 @@ const BLENDER = process.env.IZV_BLENDER ?? 'http://localhost:8090';
 export default defineConfig({
   base: './',
   plugins: [preact()],
+  // dracoWorker.js uses importScripts() for the legacy asm.js Draco encoder, which only
+  // works in a classic (non-module) worker — bundle it as a self-contained IIFE.
+  worker: {
+    format: 'iife',
+  },
   server: {
     host: true,
     proxy: {

@@ -5,3 +5,5 @@ addon/web_dist/
 addon/certs/
 *.zip
 .env
+.claude/
+dist/

@@ -182,19 +182,22 @@ export class EditorModel {
 
   setExtensionEnabled(index, group, enabled) {
     const material = this.materials()[index];
-    const apply = (on, prop) => {
-      if (on) {
-        if (prop) material.setExtension(group.ext, prop);
-        else this.extensionTarget(material, group, true);
-      } else {
-        material.setExtension(group.ext, null);
-      }
+    const groups = [group];
+    const dep = enabled && group.requires && GROUPS.find((g) => g.id === group.requires);
+    if (dep && !material.getExtension(dep.ext)) groups.push(dep);
+
+    const apply = (on, props) => {
+      groups.forEach((g, i) => {
+        if (!on) material.setExtension(g.ext, null);
+        else if (props?.[i]) material.setExtension(g.ext, props[i]);
+        else this.extensionTarget(material, g, true);
+      });
       this.scheduleRebuild();
     };
-    // Keep the removed property object so undo restores its values, not defaults.
-    const kept = material.getExtension(group.ext);
+    // Keep the removed property objects so undo restores their values, not defaults.
+    const kept = groups.map((g) => material.getExtension(g.ext));
     apply(enabled);
-    const created = material.getExtension(group.ext);
+    const created = groups.map((g) => material.getExtension(g.ext));
     this.record({
       undo: () => apply(!enabled, kept),
       redo: () => apply(enabled, created),

@@ -7,6 +7,10 @@
  *  field.three    — apply the value to a three.js material without reloading
  *  group.textures — texture slots: get<Prop>() / set<Prop>() / get<Prop>Info()
  *                   slot.neutral: what "remove" puts in the slot (default white — factors are multipliers)
+ *                   slot.factor: color field edited by clicking the empty slot
+ *  field.slot     — shown under that texture slot instead of the field list
+ *  field.visible  — (material) => bool, hide the field when it has no effect
+ *  group.requires — group enabled together with this one (Transmission needs Volume for thickness)
  *
  * Colors are linear RGB arrays (glTF factors are linear, three's working space is linear too).
  * No glTF-Transform imports here: the viewer bundle uses this file without the editor.
@@ -41,7 +45,7 @@ export const GROUPS = [
         three: (t, v) => t.color.setRGB(...v),
       },
       {
-        key: 'alpha', label: 'Alpha', ...range(0, 1),
+        key: 'alpha', label: 'Alpha', ...range(0, 1), visible: (m) => m.getAlphaMode() !== 'OPAQUE',
         get: (m) => m.getBaseColorFactor()[3],
         set: (m, v) => m.setBaseColorFactor([...m.getBaseColorFactor().slice(0, 3), v]),
         three: (t, v) => { t.opacity = v; },
@@ -51,7 +55,7 @@ export const GROUPS = [
         prop: 'AlphaMode', three: setAlphaMode, affectsTransparency: true,
       },
       {
-        key: 'alphaCutoff', label: 'Alpha cutoff', ...range(0, 1), prop: 'AlphaCutoff',
+        key: 'alphaCutoff', label: 'Alpha cutoff', ...range(0, 1), prop: 'AlphaCutoff', visible: (m) => m.getAlphaMode() === 'MASK',
         three: (t, v) => {
           t.userData.izvCutoff = v;
           if (t.alphaTest > 0) t.alphaTest = v;
@@ -62,7 +66,7 @@ export const GROUPS = [
         three: (t, v) => { t.side = v ? 2 : 0; },
       },
     ],
-    textures: [{ label: 'Base color', prop: 'BaseColorTexture', color: true }],
+    textures: [{ label: 'Base color', prop: 'BaseColorTexture', color: true, factor: 'baseColor' }],
   },
   {
     id: 'pbr', title: 'Metallic / Roughness', ext: null,
@@ -76,12 +80,12 @@ export const GROUPS = [
     id: 'normal', title: 'Normal & occlusion', ext: null,
     fields: [
       {
-        key: 'normalScale', label: 'Normal scale', ...range(0, 2), prop: 'NormalScale',
+        key: 'normalScale', label: 'Strength', ...range(0, 2), prop: 'NormalScale', slot: 'NormalTexture',
         // GLTFLoader flips Y when the mesh has no tangents: keep that sign.
         three: (t, v) => t.normalScale.set(v, Math.sign(t.normalScale.y || 1) * v),
       },
       {
-        key: 'occlusionStrength', label: 'Occlusion strength', ...range(0, 1), prop: 'OcclusionStrength',
+        key: 'occlusionStrength', label: 'Strength', ...range(0, 1), prop: 'OcclusionStrength', slot: 'OcclusionTexture',
         three: (t, v) => { t.aoMapIntensity = v; },
       },
     ],
@@ -92,7 +96,7 @@ export const GROUPS = [
     fields: [
       { key: 'emissive', label: 'Emissive', type: 'color', prop: 'EmissiveFactor', three: (t, v) => t.emissive.setRGB(...v) },
     ],
-    textures: [{ label: 'Emissive', prop: 'EmissiveTexture', color: true }],
+    textures: [{ label: 'Emissive', prop: 'EmissiveTexture', color: true, factor: 'emissive' }],
   },
   {
     // Shown inside "Emission"; the extension is created on first edit (glTF caps emissiveFactor at 1).
@@ -111,6 +115,7 @@ export const GROUPS = [
   },
   {
     id: 'transmission', title: 'Transmission', ext: 'KHR_materials_transmission', create: 'createTransmission', physical: true,
+    requires: 'volume',
     fields: [
       { key: 'transmission', label: 'Factor', ...range(0, 1), prop: 'TransmissionFactor', three: (t, v) => { t.transmission = v; } },
     ],
@@ -119,7 +124,7 @@ export const GROUPS = [
   {
     id: 'volume', title: 'Volume', ext: 'KHR_materials_volume', create: 'createVolume', physical: true,
     fields: [
-      { key: 'thickness', label: 'Thickness', ...range(0, 10), prop: 'ThicknessFactor', three: (t, v) => { t.thickness = v; } },
+      { key: 'thickness', label: 'Thickness', ...range(0, 2), prop: 'ThicknessFactor', three: (t, v) => { t.thickness = v; } },
       {
         key: 'attenuationDistance', label: 'Attenuation distance', ...range(0, 100, 0.1), prop: 'AttenuationDistance',
         three: (t, v) => { t.attenuationDistance = v === 0 ? Infinity : v; },
@@ -153,7 +158,7 @@ export const GROUPS = [
       { key: 'sheenRoughness', label: 'Roughness', ...range(0, 1), prop: 'SheenRoughnessFactor', three: (t, v) => { t.sheenRoughness = v; } },
     ],
     textures: [
-      { label: 'Sheen color', prop: 'SheenColorTexture', color: true },
+      { label: 'Sheen color', prop: 'SheenColorTexture', color: true, factor: 'sheenColor' },
       { label: 'Sheen roughness (A)', prop: 'SheenRoughnessTexture' },
     ],
   },
@@ -165,7 +170,7 @@ export const GROUPS = [
     ],
     textures: [
       { label: 'Specular (A)', prop: 'SpecularTexture' },
-      { label: 'Specular color', prop: 'SpecularColorTexture', color: true },
+      { label: 'Specular color', prop: 'SpecularColorTexture', color: true, factor: 'specularColor' },
     ],
   },
   {

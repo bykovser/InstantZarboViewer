@@ -185,7 +185,8 @@ function Popover({ srgb, onChange, swatches, onClose, anchor }) {
 
 const recent = [];
 
-export function ColorPicker({ value, onInput, space = 'linear', swatches = [] }) {
+// variant 'thumb': the trigger is a texture-slot tile (empty slot = factor color).
+export function ColorPicker({ value, onInput, space = 'linear', swatches = [], variant = 'field', title }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef();
   const srgb = toSRGB(value ?? [1, 1, 1], space);
@@ -199,10 +200,15 @@ export function ColorPicker({ value, onInput, space = 'linear', swatches = [] })
     recent.length = Math.min(recent.length, 8);
   };
 
+  const toggle = () => (open ? close() : setOpen(true));
   return (
-    <span class="cp-field">
-      <button ref={anchor} class="cp-button" style={{ background: hex }} onClick={() => (open ? close() : setOpen(true))} />
-      <span class="mono muted">{hex}</span>
+    <span class={variant === 'thumb' ? 'cp-thumb-wrap' : 'cp-field'}>
+      {variant === 'thumb'
+        ? <button ref={anchor} class="slot-thumb slot-color" style={{ background: hex }} title={title} onClick={toggle} />
+        : <>
+          <button ref={anchor} class="cp-button" style={{ background: hex }} onClick={toggle} />
+          <span class="mono muted">{hex}</span>
+        </>}
       {open && (
         <Popover
           srgb={srgb} anchor={anchor} onClose={close}

@@ -8,6 +8,48 @@ import { Outliner } from './ui/Outliner.jsx';
 import { ExportPanel, ScenePanel } from './ui/panels.jsx';
 import { Tabs } from './ui/widgets.jsx';
 
+const WIDTHS = { left: [180, 600, 280], right: [260, 700, 340] };
+const widthKey = (side) => `izv.panel.${side}`;
+
+function setWidth(side, px) {
+  const [min, max] = WIDTHS[side];
+  const w = Math.round(Math.min(max, Math.max(min, px)));
+  document.body.style.setProperty(`--ed-${side}`, `${w}px`);
+  return w;
+}
+
+function restoreWidths() {
+  for (const side of Object.keys(WIDTHS)) {
+    let saved = null;
+    try { saved = Number(localStorage.getItem(widthKey(side))); } catch { /* storage blocked */ }
+    setWidth(side, saved || WIDTHS[side][2]);
+  }
+}
+
+// Drag handle on the inner edge of a side panel; double click resets the width.
+function Splitter({ side }) {
+  const onDown = (e) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('active');
+    let w;
+    const move = (ev) => { w = setWidth(side, side === 'left' ? ev.clientX : innerWidth - ev.clientX); };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.classList.remove('active');
+      try { if (w) localStorage.setItem(widthKey(side), String(w)); } catch { /* storage blocked */ }
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up, { once: true });
+  };
+  const reset = () => {
+    setWidth(side, WIDTHS[side][2]);
+    try { localStorage.removeItem(widthKey(side)); } catch { /* storage blocked */ }
+  };
+  return <div class={`ed-split ${side}`} onPointerDown={onDown} onDblClick={reset} title="Потяните, чтобы изменить ширину; двойной клик — сброс" />;
+}
+
 function App({ model, store, onClose }) {
   const [tab, setTab] = useState('props');
   const h = model.history.value;
@@ -53,6 +95,8 @@ function App({ model, store, onClose }) {
           {tab === 'export' && <ExportPanel model={model} />}
         </div>
       </aside>
+      <Splitter side="left" />
+      <Splitter side="right" />
       {busy && <div class="ed-busy">{busy}</div>}
     </>
   );
@@ -80,6 +124,7 @@ function bindPicking(viewer, model) {
 export async function mountEditor({ viewer, store, modelUrl, onClose }) {
   const root = document.getElementById('editor-root');
   const model = new EditorModel(viewer);
+  restoreWidths();
   document.body.classList.add('editing');
   const unbind = bindPicking(viewer, model);
 

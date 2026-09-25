@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
 
-import { GROUPS, NEUTRAL_TEXTURES } from '../../materials/schema.js';
+import { FIELDS, GROUPS, NEUTRAL_TEXTURES } from '../../materials/schema.js';
 import { download } from '../io.js';
 import { NEUTRAL_PREFIX } from '../model.js';
 import { blackbodyLinear, KELVIN_PRESETS } from '../blackbody.js';
@@ -72,7 +72,7 @@ function BlackbodyRow({ model, index }) {
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const NEUTRAL_NAMES = { white: 'белая', normal: 'плоская нормаль', anisotropy: 'нейтральное направление' };
 
-function TextureSlot({ model, index, group, slot }) {
+function TextureSlot({ model, index, group, slot, material, fields = [] }) {
   useDoc(model);
   const input = useRef();
   const [dragOver, setDragOver] = useState(false);
@@ -108,13 +108,28 @@ function TextureSlot({ model, index, group, slot }) {
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => { e.preventDefault(); setDragOver(false); useFile(e.dataTransfer.files[0]); }}
     >
-      <div class="slot-thumb" onClick={upload} title="Загрузить изображение (или перетащите файл на слот)">
-        {texture
-          ? (url ? <img src={url} /> : <span>{texture.getMimeType().split('/')[1]}</span>)
-          : <span class="slot-default" style={{ background: `rgb(${NEUTRAL_TEXTURES[neutralKind].slice(0, 3).join(',')})` }}>+</span>}
-      </div>
+      {(!texture || neutral) && slot.factor ? (
+        <ColorPicker
+          variant="thumb" title="Карты нет — клик меняет цвет (фактор)"
+          value={model.readField(material, slot.factor)} swatches={documentSwatches(model)}
+          onInput={(v) => model.setField(index, slot.factor, v)}
+        />
+      ) : (
+        <div class="slot-thumb" onClick={upload} title="Загрузить изображение (или перетащите файл на слот)">
+          {texture && !neutral
+            ? (url ? <img src={url} /> : <span>{texture.getMimeType().split('/')[1]}</span>)
+            : <span class="slot-default" style={{ background: `rgb(${NEUTRAL_TEXTURES[neutralKind].slice(0, 3).join(',')})` }}>+</span>}
+        </div>
+      )}
       <div class="slot-body">
-        <div class="slot-title">{slot.label}</div>
+        <div class="slot-title">
+          <span>{slot.label}</span>
+          <span class="muted">
+            {!texture || neutral
+              ? 'только фактор'
+              : `${size ? `${size[0]}×${size[1]}` : '?'} · ${texture.getMimeType().replace('image/', '')} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
+          </span>
+        </div>
         <Select value={current} options={options} onChange={choose} />
         <div class="slot-actions">
           <label class="slot-uv" title="UV-канал (TEXCOORD_n)">
@@ -136,11 +151,11 @@ function TextureSlot({ model, index, group, slot }) {
             onClick={() => model.clearSlot(index, group, slot)}
           >Убрать</button>
         </div>
-        <div class="muted">
-          {!texture || neutral
-            ? 'работает только фактор'
-            : `${size ? `${size[0]}×${size[1]}` : '?'} · ${texture.getMimeType().replace('image/', '')} · ${formatBytes(texture.getImage()?.byteLength ?? 0)}`}
-        </div>
+        {fields.map((field) => (
+          <Row label={field.label}>
+            <FieldControl model={model} index={index} field={field} material={material} />
+          </Row>
+        ))}
       </div>
       <input
         ref={input} type="file" accept={IMAGE_TYPES.join(',')} hidden
@@ -162,9 +177,11 @@ function MaterialInspector({ model, index }) {
 
   return (
     <div class="inspector">
-      <Row label="Имя">
-        <input type="text" value={material.getName()} onChange={(e) => model.renameMaterial(index, e.currentTarget.value)} />
-      </Row>
+      <div class="sticky-head">
+        <Row label="Материал">
+          <input type="text" value={material.getName()} onChange={(e) => model.renameMaterial(index, e.currentTarget.value)} />
+        </Row>
+      </div>
       {GROUPS.map((group) => {
         if (group.inline) return null;
         const enabled = !group.ext || model.hasExtension(index, group.ext);
@@ -182,13 +199,18 @@ function MaterialInspector({ model, index }) {
               <p class="muted">{group.ext} — не используется. Включите галочкой.</p>
             ) : (
               <>
-                {[...group.fields, ...inlined].map((field) => (
+                {[...group.fields, ...inlined].filter((f) => !f.slot && (!f.visible || f.visible(material))).map((field) => (
                   <Row label={field.label}>
                     <FieldControl model={model} index={index} field={field} material={material} />
                   </Row>
                 ))}
                 {group.id === 'emissive' && <BlackbodyRow key={index} model={model} index={index} />}
-                {group.textures?.map((slot) => <TextureSlot model={model} index={index} group={group} slot={slot} />)}
+                {group.textures?.map((slot) => (
+                  <TextureSlot
+                    model={model} index={index} group={group} slot={slot} material={material}
+                    fields={group.fields.filter((f) => f.slot === slot.prop).map((f) => FIELDS.get(f.key))}
+                  />
+                ))}
               </>
             )}
           </Section>

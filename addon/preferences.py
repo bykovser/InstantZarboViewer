@@ -19,8 +19,8 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         default=False,
     )
     legacy_blender: StringProperty(
-        name="Blender 4.1 for USDZ",
-        description="USDZ from Blender 4.2+ doesn't open on iOS; empty = default 4.1 install path",
+        name="Blender for USDZ",
+        description="Blender that writes USDZ in the background; empty = this Blender (e.g. point to 4.1 to compare)",
         subtype='FILE_PATH',
     )
     zarbo_host: StringProperty(name="Zarbo host", default=DEFAULT_HOST)

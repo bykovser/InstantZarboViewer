@@ -1,8 +1,10 @@
-"""Runs INSIDE a legacy Blender (4.1): GLB -> USDZ for iOS Quick Look.
+"""Runs INSIDE a background Blender (4.1 … 5.x): GLB -> USDZ for iOS Quick Look.
 
-blender -b --factory-startup --python usdz_legacy_worker.py -- in.glb out.usdz <max_texture|0> <animation 0|1>
+blender -b --factory-startup --python usdz_worker.py -- in.glb out.usdz <max_texture|0> <animation 0|1>
 
-USDZ from Blender 4.2+/5.x doesn't open on iOS, so the current Blender only exports GLB and hands it here.
+Output of 5.2 opens on iOS (tested on iPhone XS); sanitize() still brings it down to what 4.1 wrote,
+for older iOS: no ColorSpaceAPI (USD 25+ schema), no Blender-only attributes, every SkelAnimation
+channel time-sampled on the same frames.
 Fixes from MaxConverter (verified with ComplianceChecker(arkit=True)):
   - Z-up -> Y-up explicitly, otherwise models open lying on their side;
   - no lights: World becomes a DomeLight, which ARKit rejects;
@@ -64,6 +66,47 @@ def wrap_y_up():
         obj.matrix_parent_inverse.identity()
 
 
+def sanitize(usdc: Path):
+    from pxr import Sdf, Usd
+    layer = Sdf.Layer.FindOrOpen(str(usdc))
+    paths = []
+    layer.Traverse(Sdf.Path.absoluteRootPath, lambda p: paths.append(p) if p.IsPrimPath() else None)
+    for path in paths:
+        spec = layer.GetPrimAtPath(path)
+        if spec.HasInfo("apiSchemas"):
+            op = spec.GetInfo("apiSchemas")
+            items = [s for s in op.prependedItems if s != "ColorSpaceAPI"]
+            if len(items) != len(op.prependedItems):
+                if items:
+                    op.prependedItems = items
+                    spec.SetInfo("apiSchemas", op)
+                else:
+                    spec.ClearInfo("apiSchemas")
+        for name in [n for n in spec.properties.keys() if n.startswith("colorSpace:") or ":blender:" in n]:
+            spec.RemoveProperty(spec.properties[name])
+        if spec.typeName != "SkelAnimation":
+            continue
+        channels = [spec.properties[n] for n in ("rotations", "scales", "translations", "blendShapeWeights")
+                    if n in spec.properties]
+        times = sorted({t for a in channels for t in layer.ListTimeSamplesForPath(a.path)})
+        if not times:
+            times = [layer.startTimeCode if layer.HasStartTimeCode() else 1.0]
+        stage = None
+        for attr in channels:
+            own = layer.ListTimeSamplesForPath(attr.path)
+            if attr.default is not None and not own:
+                for t in times:
+                    layer.SetTimeSample(attr.path, t, attr.default)
+            elif own and len(own) != len(times):
+                stage = stage or Usd.Stage.Open(layer)
+                usd_attr = stage.GetAttributeAtPath(attr.path)
+                for t in times:
+                    if t not in own:
+                        layer.SetTimeSample(attr.path, t, usd_attr.Get(t))
+            attr.ClearDefaultValue()
+    layer.Save()
+
+
 def package_usdz(usdc: Path, dst: Path):
     from pxr import Sdf, Usd, UsdGeom, UsdUtils
     stage = Usd.Stage.Open(str(usdc))
@@ -93,14 +136,15 @@ def main():
     work = dst.parent / f"{dst.stem}_work"
     compress_textures(max_size, work / "textures")
     rename_first_uv()
-    wrap_y_up()
+    op = bpy.ops.wm.usd_export
+    if "convert_orientation" not in {p.identifier for p in op.get_rna_type().properties}:
+        wrap_y_up()
 
     scene = bpy.context.scene
     if animation and bpy.data.actions:
         start = min(a.frame_range[0] for a in bpy.data.actions)
         end = max(a.frame_range[1] for a in bpy.data.actions)
         scene.frame_start, scene.frame_end = int(start), int(end)
-    op = bpy.ops.wm.usd_export
     op(**op_kwargs(
         op,
         filepath=str(work / f"{dst.stem}.usdc"),
@@ -123,6 +167,7 @@ def main():
         export_shapekeys=animation,
     ))
     try:
+        sanitize(work / f"{dst.stem}.usdc")
         package_usdz(work / f"{dst.stem}.usdc", dst)
     finally:
         shutil.rmtree(work, ignore_errors=True)

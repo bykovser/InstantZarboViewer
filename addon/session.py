@@ -9,7 +9,7 @@ import bpy
 
 from .export.glb import export_glb
 from .export.hdri import export_hdri
-from .export.usdz import export_usdz, legacy_blender
+from .export.usdz import export_usdz, usdz_blender
 from .live import viewer_snapshot
 
 
@@ -42,9 +42,9 @@ def build(context, legacy_blender_path: str = "") -> dict:
     stamp = int(time.time())
     e = settings.export
     glb = export_glb(context, out / f"model_{stamp}.glb", e.selected_only, e.draco_level if e.draco else None)
-    # No legacy Blender -> no USDZ; Zarbo then builds the iOS model from GLB itself.
+    # No Blender binary for the worker -> no USDZ; Zarbo then builds the iOS model from GLB itself.
     usdz = None
-    blender = legacy_blender(legacy_blender_path)
+    blender = usdz_blender(legacy_blender_path)
     if settings.export.export_usdz and blender:
         usdz = export_usdz(glb, blender, settings.export.usdz_texture_size, settings.export.usdz_animation)
 

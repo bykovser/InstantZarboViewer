@@ -1,4 +1,5 @@
 import subprocess
+import webbrowser
 
 import bpy
 

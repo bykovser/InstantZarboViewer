@@ -13,6 +13,7 @@ export const DEFAULTS = {
   bloomRadius: 0.4,
   bloomThreshold: 1,
   showLights: false,
+  syncBlender: true, // editor open: apply Blender live updates
 };
 
 export function createStore(initial) {

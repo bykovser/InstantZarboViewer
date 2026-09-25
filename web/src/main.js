@@ -90,6 +90,10 @@ async function main() {
 
   // What the viewport shows now: the Blender session file, or a dropped file.
   let current = { url: s.model, name: undefined, kind: 'gltf' };
+  // Latest Blender export, kept even while sync is off so "revert" can pull it.
+  let blenderScene = s.standalone ? null : s;
+  let blenderPending = false;
+  const syncing = () => !editor || store.get().syncBlender;
 
   // Editor: separate chunk, desktop only (button hidden on narrow screens by CSS).
   let editor = null;
@@ -101,7 +105,10 @@ async function main() {
     }
     editButton.disabled = true;
     const { mountEditor } = await import('./editor/index.jsx');
-    editor = await mountEditor({ viewer, store, modelUrl: current.url, modelName: current.name, onClose: closeEditor });
+    editor = await mountEditor({
+      viewer, store, modelUrl: current.url, modelName: current.name, onClose: closeEditor,
+      actions: { revert: () => revert(), hasBlender: Boolean(blenderScene) },
+    });
   };
   const closeEditor = () => {
     editor?.unmount();
@@ -113,6 +120,33 @@ async function main() {
     openEditor().catch((err) => flash(err.message));
   });
   let queue = Promise.resolve();
+
+  const loadBlenderScene = async (next) => {
+    await Promise.all([viewer.loadModel(next.model), viewer.setEnvironment(next.environment, next.environmentRotation)]);
+    if (current.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+    current = { url: next.model, name: undefined, kind: 'gltf' };
+    blenderPending = false;
+    store.set(next);
+    showUsdz(next.usdz);
+    if (editor) await editor.model.load(next.model);
+  };
+
+  // Drop the editor's changes: back to the latest Blender export, or to the file as opened/dropped.
+  const revert = () => {
+    const edits = editor?.model.history.value.undo ?? 0;
+    if (edits && !confirm(`Сбросить правки редактора (${edits})?`)) return;
+    queue = queue.then(async () => {
+      status.textContent = 'Откат…';
+      if (blenderScene && (current.kind === 'gltf' && !current.url.startsWith('blob:') || blenderPending)) {
+        await loadBlenderScene(blenderScene);
+      } else {
+        await viewer.loadModel(current.url, current.kind);
+        if (editor) await editor.model.load(current.url, current.name);
+      }
+      flash('Откат: правки редактора сброшены');
+    }).catch((e) => flash(e.message));
+  };
+
   bindDrop((file) => {
     const kind = fileKind(file.name);
     if (!kind) {
@@ -142,18 +176,20 @@ async function main() {
   connectLive({
     // Re-export: new file, same tab, camera stays where the user left it.
     scene: (next) => {
+      blenderScene = next;
+      if (!syncing()) {
+        blenderPending = true;
+        flash('Blender переэкспортировал модель — синк выключен, «Откат» подтянет её');
+        return;
+      }
       queue = queue.then(async () => {
         status.textContent = 'Обновление…';
-        await Promise.all([viewer.loadModel(next.model), viewer.setEnvironment(next.environment, next.environmentRotation)]);
-        if (current.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
-        current = { url: next.model, name: undefined, kind: 'gltf' };
-        store.set(next);
-        showUsdz(next.usdz);
-        if (editor) await editor.model.load(next.model);
+        await loadBlenderScene(next);
         flash(editor ? 'Модель обновлена из Blender, правки в редакторе сброшены' : 'Модель обновлена');
       }).catch((e) => flash(e.message));
     },
     material: (patches) => {
+      if (!syncing()) return;
       queue.then(() => {
         if (editor) {
           const missing = editor.model.applyBlenderPatches(patches);
@@ -165,7 +201,7 @@ async function main() {
         else if (missing.length) flash(`Нет в модели: ${missing.join(', ')} — нужен переэкспорт`);
       });
     },
-    viewer: (patch) => store.set(patch),
+    viewer: (patch) => syncing() && store.set(patch),
   }, (ok) => liveDot.classList.toggle('on', ok));
 }
 

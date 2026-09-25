@@ -5,7 +5,7 @@ import { download } from '../io.js';
 import { ColorPicker } from './ColorPicker.jsx';
 import { formatBytes, Row, Section, Select, Slider } from './widgets.jsx';
 
-function useStore(store) {
+export function useStore(store) {
   const [state, setState] = useState(store.get());
   useEffect(() => store.subscribe((s) => setState(s)), [store]);
   return state;

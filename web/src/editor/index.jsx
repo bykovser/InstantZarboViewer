@@ -5,7 +5,7 @@ import './editor.css';
 import { EditorModel } from './model.js';
 import { Inspector } from './ui/Inspector.jsx';
 import { Outliner } from './ui/Outliner.jsx';
-import { ExportPanel, ScenePanel } from './ui/panels.jsx';
+import { ExportPanel, ScenePanel, useStore } from './ui/panels.jsx';
 import { Tabs } from './ui/widgets.jsx';
 
 const WIDTHS = { left: [180, 600, 280], right: [260, 700, 340] };
@@ -50,8 +50,9 @@ function Splitter({ side }) {
   return <div class={`ed-split ${side}`} onPointerDown={onDown} onDblClick={reset} title="Потяните, чтобы изменить ширину; двойной клик — сброс" />;
 }
 
-function App({ model, store, onClose }) {
+function App({ model, store, onClose, actions }) {
   const [tab, setTab] = useState('props');
+  const { syncBlender } = useStore(store);
   const h = model.history.value;
   const busy = model.busy.value;
 
@@ -78,6 +79,13 @@ function App({ model, store, onClose }) {
         <header class="ed-header">
           <strong title={model.fileName}>{model.fileName}</strong>
           <span class="grow" />
+          {actions.hasBlender && (
+            <button
+              class={`sync ${syncBlender ? 'on' : ''}`} onClick={() => store.set({ syncBlender: !syncBlender })}
+              title={syncBlender ? 'Синк с Blender включён: правки материалов и переэкспорт приходят сюда' : 'Синк с Blender выключен: изменения из Blender не трогают редактор'}
+            >Blender</button>
+          )}
+          <button onClick={actions.revert} title={actions.hasBlender ? 'Откатить к последнему экспорту из Blender' : 'Откатить к исходному файлу'}>⟲</button>
           <button onClick={() => model.undo()} disabled={!h.undo} title="Отменить (Ctrl+Z)">↶</button>
           <button onClick={() => model.redo()} disabled={!h.redo} title="Повторить (Ctrl+Y)">↷</button>
           <button onClick={onClose} title="Закрыть редактор">✕</button>
@@ -121,7 +129,7 @@ function bindPicking(viewer, model) {
   };
 }
 
-export async function mountEditor({ viewer, store, modelUrl, modelName, onClose }) {
+export async function mountEditor({ viewer, store, modelUrl, modelName, onClose, actions }) {
   const root = document.getElementById('editor-root');
   const model = new EditorModel(viewer);
   restoreWidths();
@@ -137,6 +145,6 @@ export async function mountEditor({ viewer, store, modelUrl, modelName, onClose 
 
   render(<p class="ed-busy">Загрузка редактора…</p>, root);
   await model.load(modelUrl, modelName);
-  render(<App model={model} store={store} onClose={onClose} />, root);
+  render(<App model={model} store={store} onClose={onClose} actions={actions} />, root);
   return { model, unmount };
 }

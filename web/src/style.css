@@ -144,10 +144,14 @@ body.editing #tabs {
 }
 #compare .cmp-label.a { left: 10px; }
 #compare .cmp-label.b { right: 10px; box-shadow: inset 0 0 0 1px #e8a25c; }
+#compare.side .cmp-line, #compare.side .cmp-label, #compare.side .cmp-hint { display: none; }
 #compare .cmp-bar {
   position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 8px; align-items: center; white-space: nowrap;
 }
+#compare .cmp-modes { pointer-events: auto; display: flex; border-radius: 4px; overflow: hidden; }
+#compare .cmp-mode { border: 0; padding: 3px 10px; cursor: pointer; background: #1e1f22b3; color: #cfd2d8; font: inherit; }
+#compare .cmp-mode.active { background: #e8a25c; color: #1e1f22; }
 #compare .cmp-hint { padding: 2px 8px; border-radius: 4px; background: #1e1f22b3; color: #cfd2d8; }
 #compare .cmp-reset {
   pointer-events: auto; border: 0; border-radius: 4px; padding: 3px 10px; cursor: pointer;

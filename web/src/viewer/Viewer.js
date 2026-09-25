@@ -85,6 +85,10 @@ export class Viewer {
     const dt = this.paused ? (this.clock.getDelta(), 0) : this.clock.getDelta();
     this.controls.update();
     this.stepAnimations(dt);
+    if (this.compare?.mode === 'side') {
+      this.renderSide();
+      return;
+    }
     if (this.compare) {
       this.renderCompare();
       return;
@@ -100,7 +104,10 @@ export class Viewer {
   setCompare(gltfB) {
     this.endAlt();
     const prev = this.compare;
-    if (prev?.model && prev.model !== gltfB?.scene && prev.model.parent === this.sceneB) this.sceneB.remove(prev.model);
+    if (prev?.model && prev.model !== gltfB?.scene) {
+      this.restoreSidePosition(prev);
+      if (prev.model.parent === this.sceneB) this.sceneB.remove(prev.model);
+    }
     prev?.mixer?.stopAllAction();
     if (!gltfB) {
       this.compare = null;
@@ -112,14 +119,48 @@ export class Viewer {
       model: gltfB.scene, clips, actions: [], mixer: clips.length ? new AnimationMixer(gltfB.scene) : null,
       split: prev?.split ?? 0.5,
       offsets: prev?.offsets ?? { a: zeroOffset(), b: zeroOffset() },
+      mode: prev?.mode ?? 'wipe',
+      basePos: gltfB.scene.position.clone(),
     };
     this.playCompareClips();
     if (this.transparencyMode) this.transparencyB.apply(gltfB.scene, this.transparencyMode);
     gltfB.scene.traverse((o) => { if (o.isLight) o.visible = this.lightsVisible; });
+    if (this.compare.mode === 'side') this.applySideLayout();
   }
 
   setSplit(x) {
     if (this.compare) this.compare.split = MathUtils.clamp(x, 0, 1);
+  }
+
+  // 'wipe' (A|B split, own cameras) or 'side' (both in one scene, one shared camera).
+  setCompareMode(mode) {
+    if (!this.compare || this.compare.mode === mode) return;
+    this.endAlt();
+    if (this.compare.mode === 'side') this.restoreSidePosition(this.compare);
+    this.compare.mode = mode;
+    if (mode === 'side') this.applySideLayout();
+  }
+
+  restoreSidePosition(c) {
+    if (c.basePos) c.model.position.copy(c.basePos);
+  }
+
+  // Move B next to A along X (no overlap) and frame the camera on both.
+  applySideLayout() {
+    const c = this.compare;
+    if (!c || !this.model) return;
+    c.model.position.copy(c.basePos);
+    this.poseForBounds(this.model, this.mixer);
+    this.poseForBounds(c.model, c.mixer);
+    const boxA = new Box3().setFromObject(this.model);
+    const boxB = new Box3().setFromObject(c.model);
+    const sizeA = boxA.getSize(new Vector3());
+    const sizeB = boxB.getSize(new Vector3());
+    const gap = Math.max(sizeA.x, sizeB.x, 1) * 0.2;
+    const dx = boxA.max.x + gap - boxB.min.x;
+    c.model.position.x += dx;
+    boxB.translate(new Vector3(dx, 0, 0));
+    this.frameBox(boxA.clone().union(boxB));
   }
 
   resetOffsets() {
@@ -188,10 +229,25 @@ export class Viewer {
     r.setScissorTest(false);
   }
 
+  // Both models rendered together with the shared camera: A first, then B over it (shared depth).
+  renderSide() {
+    const r = this.renderer;
+    r.setScissorTest(false);
+    this.transparency.update(this.camera);
+    r.render(this.scene, this.camera);
+    this.sceneB.background = null;
+    this.sceneB.environment = this.scene.environment;
+    this.sceneB.environmentRotation.copy(this.scene.environmentRotation);
+    this.transparencyB.update(this.camera);
+    r.autoClear = false;
+    r.render(this.sceneB, this.camera);
+    r.autoClear = true;
+  }
+
   // Alt + mouse: orbit only the side under the cursor (its own offset). Alt released: back to shared orbit.
   bindAlt(canvas) {
     const start = (e) => {
-      if (!this.compare || !e.altKey || this.alt) return;
+      if (!this.compare || this.compare.mode !== 'wipe' || !e.altKey || this.alt) return;
       e.preventDefault();
       this.beginAlt(this.sideAt(e.clientX));
     };
@@ -383,8 +439,9 @@ export class Viewer {
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster ??= new Raycaster();
     // Compare: only side A (the editable tab) is pickable.
-    if (this.compare && this.sideAt(clientX) === 'b') return null;
-    this.raycaster.setFromCamera(ndc, this.compare ? this.camA : this.camera);
+    const wipe = this.compare?.mode === 'wipe';
+    if (wipe && this.sideAt(clientX) === 'b') return null;
+    this.raycaster.setFromCamera(ndc, wipe ? this.camA : this.camera);
     const hit = this.raycaster.intersectObject(this.model, true).find((h) => h.object.isMesh && !h.object.userData.izvPrepass);
     if (!hit) return null;
     const mats = Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material];
@@ -433,17 +490,19 @@ export class Viewer {
     }
   }
 
-  // camera = { theta, phi, radius, target } in model-viewer's camera-orbit convention (degrees).
-  frameCamera(camera) {
-    // Skinned bounds come from posed bones: pose them first, or USD (Z-up bind space) frames sideways.
-    this.mixer?.update(0);
-    this.model.updateMatrixWorld(true);
-    this.model.traverse((o) => {
+  // Skinned bounds come from posed bones: pose them first, or USD (Z-up bind space) frames sideways.
+  poseForBounds(root, mixer) {
+    mixer?.update(0);
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
       if (!o.isSkinnedMesh) return;
       o.skeleton.update();
       o.computeBoundingBox();
     });
-    const box = new Box3().setFromObject(this.model);
+  }
+
+  // camera = { theta, phi, radius, target } in model-viewer's camera-orbit convention (degrees).
+  frameBox(box, camera) {
     const size = box.getSize(new Vector3()).length() || 1;
     const target = camera?.target ? new Vector3(...camera.target) : box.getCenter(new Vector3());
     const theta = MathUtils.degToRad(camera?.theta ?? 0);
@@ -462,5 +521,10 @@ export class Viewer {
     this.controls.target.copy(target);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+  }
+
+  frameCamera(camera) {
+    this.poseForBounds(this.model, this.mixer);
+    this.frameBox(new Box3().setFromObject(this.model), camera);
   }
 }

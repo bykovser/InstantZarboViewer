@@ -1,6 +1,6 @@
 import bpy
 from bpy.props import (BoolProperty, EnumProperty, FloatProperty, FloatVectorProperty,
-                       PointerProperty, StringProperty)
+                       IntProperty, PointerProperty, StringProperty)
 
 TONE_MAPPING = [
     ('neutral', "Neutral", "model-viewer default (Khronos PBR Neutral)"),
@@ -46,6 +46,10 @@ class IZV_ViewerSettings(bpy.types.PropertyGroup):
 
 class IZV_ExportSettings(bpy.types.PropertyGroup):
     selected_only: BoolProperty(name="Selected only", default=False)
+    draco: BoolProperty(
+        name="Draco", default=False,
+        description="Compress GLB geometry (KHR_draco_mesh_compression). Slower export, much smaller file")
+    draco_level: IntProperty(name="Level", default=6, min=0, max=10, description="Higher = smaller file, slower encode")
     export_usdz: BoolProperty(name="USDZ", description="Also export USDZ for iOS Quick Look", default=True)
     usdz_texture_size: EnumProperty(name="USDZ textures", items=TEXTURE_SIZE, default='2048')
     usdz_animation: BoolProperty(name="Animation", default=True)

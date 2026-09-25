@@ -40,7 +40,8 @@ def build(context, legacy_blender_path: str = "") -> dict:
     out.mkdir(parents=True)
 
     stamp = int(time.time())
-    glb = export_glb(context, out / f"model_{stamp}.glb", settings.export.selected_only)
+    e = settings.export
+    glb = export_glb(context, out / f"model_{stamp}.glb", e.selected_only, e.draco_level if e.draco else None)
     # No legacy Blender -> no USDZ; Zarbo then builds the iOS model from GLB itself.
     usdz = None
     blender = legacy_blender(legacy_blender_path)

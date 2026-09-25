@@ -60,6 +60,11 @@ class IZV_PT_Export(bpy.types.Panel):
         e = context.scene.izv.export
         col = self.layout.column()
         col.prop(e, "selected_only")
+        row = col.row(align=True)
+        row.prop(e, "draco")
+        sub = row.row(align=True)
+        sub.enabled = e.draco
+        sub.prop(e, "draco_level")
         col.prop(e, "export_usdz")
         sub = col.column()
         sub.enabled = e.export_usdz

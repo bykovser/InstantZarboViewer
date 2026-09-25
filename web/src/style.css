@@ -146,7 +146,7 @@ body.editing #tabs {
 #compare .cmp-label.a { left: 10px; }
 #compare .cmp-label.b { right: 10px; box-shadow: inset 0 0 0 1px #e8a25c; }
 #compare .cmp-bar {
-  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 8px; align-items: center; white-space: nowrap;
 }
 #compare .cmp-hint { padding: 2px 8px; border-radius: 4px; background: #1e1f22b3; color: #cfd2d8; }
@@ -166,3 +166,7 @@ body.editing #tabs {
 }
 #anim button { width: 28px; padding: 0; cursor: pointer; }
 #anim select { max-width: 180px; }
+#anim .anim-scrub { width: 180px; accent-color: #4c8dff; }
+#anim .anim-time { min-width: 86px; color: #cfd2d8; font-variant-numeric: tabular-nums; }
+#anim .anim-speed { width: 58px; }
+#anim .anim-pingpong { display: inline-flex; align-items: center; gap: 2px; color: #cfd2d8; cursor: pointer; }

@@ -84,12 +84,11 @@ export class Viewer {
   frame() {
     const dt = this.paused ? (this.clock.getDelta(), 0) : this.clock.getDelta();
     this.controls.update();
+    this.stepAnimations(dt);
     if (this.compare) {
-      this.syncAnimations(dt);
       this.renderCompare();
       return;
     }
-    this.mixer?.update(dt);
     this.transparency.update(this.camera);
     this.renderer.render(this.scene, this.camera);
     if (this.bloomOn) this.bloom.render(this.scene, this.camera);
@@ -299,7 +298,7 @@ export class Viewer {
     this.mixer = clips.length ? new AnimationMixer(this.model) : null;
     this.actions = pickClips(clips, this.clipName).map((clip) => this.mixer.clipAction(clip).play());
     this.clock.getDelta();
-    this.compareTime = 0;
+    this.animTime = 0;
     if (this.compare) this.playCompareClips();
   }
 
@@ -319,19 +318,46 @@ export class Viewer {
     const c = this.compare;
     c.mixer?.stopAllAction();
     c.actions = pickClips(c.clips, this.currentClip()).map((clip) => c.mixer.clipAction(clip).play());
-    this.compareTime = 0;
+    this.animTime = 0;
   }
 
-  // Compare: A and B run on one timeline, looping over the longest clip of both;
-  // a shorter clip holds its last pose, so both sides are always in the same phase.
-  syncAnimations(dt) {
-    const actions = [...(this.actions ?? []), ...this.compare.actions];
+  // One timeline for everything playing (A, and B when comparing): looping over the longest clip;
+  // a shorter clip holds its last pose, so compared sides stay in phase. Scrub = set the time.
+  animTime = 0;
+  speed = 1;
+  pingPong = false;
+
+  animActions() {
+    return [...(this.actions ?? []), ...(this.compare?.actions ?? [])];
+  }
+
+  animPeriod() {
+    return Math.max(0, ...this.animActions().map((a) => a.getClip().duration));
+  }
+
+  // Position on the timeline: { time, period } with time in [0, period].
+  animPosition() {
+    const period = this.animPeriod();
+    let time = this.animTime;
+    if (this.pingPong && time > period) time = 2 * period - time;
+    return { time, period };
+  }
+
+  seek(time) {
+    this.animTime = MathUtils.clamp(time, 0, this.animPeriod());
+    this.stepAnimations(0);
+  }
+
+  stepAnimations(dt) {
+    const actions = this.animActions();
     if (!actions.length) return;
-    const period = Math.max(...actions.map((a) => a.getClip().duration)) || 1;
-    this.compareTime = ((this.compareTime ?? 0) + dt) % period;
-    for (const a of actions) a.time = Math.min(this.compareTime, a.getClip().duration * 0.99999);
+    const period = this.animPeriod() || 1;
+    const span = this.pingPong ? 2 * period : period;
+    this.animTime = (((this.animTime + dt * this.speed) % span) + span) % span;
+    const { time } = this.animPosition();
+    for (const a of actions) a.time = Math.min(time, a.getClip().duration * 0.99999);
     this.mixer?.update(0);
-    this.compare.mixer?.update(0);
+    this.compare?.mixer?.update(0);
   }
 
   // model-viewer ignores KHR_lights_punctual: hidden by default so both look the same.

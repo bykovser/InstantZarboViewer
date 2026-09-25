@@ -306,10 +306,57 @@ async function main() {
   const anim = Object.assign(document.createElement('div'), { id: 'anim', hidden: true });
   anim.innerHTML = `
     <button class="anim-play" title="Пауза / воспроизведение (пробел)"></button>
+    <input class="anim-scrub" type="range" min="0" max="1000" value="0" title="Перемотка">
+    <span class="anim-time"></span>
+    <select class="anim-speed" title="Скорость">
+      <option value="0.1">×0.1</option><option value="0.25">×0.25</option><option value="0.5">×0.5</option>
+      <option value="1" selected>×1</option><option value="2">×2</option>
+    </select>
+    <label class="anim-pingpong" title="Туда и обратно"><input type="checkbox"> ⇄</label>
     <select class="anim-clip" title="Клип анимации (при сравнении B играет клип с тем же именем)"></select>`;
   document.body.append(anim);
   const playButton = anim.querySelector('.anim-play');
   const clipSelect = anim.querySelector('.anim-clip');
+  const scrub = anim.querySelector('.anim-scrub');
+  const timeLabel = anim.querySelector('.anim-time');
+  const speedSelect = anim.querySelector('.anim-speed');
+  const pingPong = anim.querySelector('.anim-pingpong input');
+  let scrubbing = false;
+
+  const showTime = () => {
+    const { time, period } = viewer.animPosition();
+    if (!scrubbing) scrub.value = period ? Math.round((time / period) * 1000) : 0;
+    timeLabel.textContent = `${time.toFixed(2)} / ${period.toFixed(2)} с`;
+  };
+  const tick = () => {
+    if (!anim.hidden) showTime();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  // Dragging the timeline holds the animation; it resumes (if it was playing) on release.
+  scrub.addEventListener('pointerdown', () => {
+    scrubbing = { wasPaused: viewer.paused };
+    viewer.paused = true;
+  });
+  scrub.addEventListener('input', () => {
+    viewer.seek((Number(scrub.value) / 1000) * viewer.animPeriod());
+    showTime();
+  });
+  const endScrub = () => {
+    if (!scrubbing) return;
+    viewer.paused = scrubbing.wasPaused;
+    scrubbing = false;
+    renderAnim();
+  };
+  scrub.addEventListener('pointerup', endScrub);
+  scrub.addEventListener('change', endScrub);
+  speedSelect.addEventListener('change', () => { viewer.speed = Number(speedSelect.value); });
+  pingPong.addEventListener('change', () => {
+    const { time } = viewer.animPosition();
+    viewer.pingPong = pingPong.checked;
+    viewer.seek(time);
+  });
   const placeAnim = () => {
     const r = canvas.getBoundingClientRect();
     Object.assign(anim.style, { left: `${r.left + 10}px`, top: `${r.bottom - 38}px` });

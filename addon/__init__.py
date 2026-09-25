@@ -15,6 +15,7 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     properties.attach()
+    preferences.push_zarbo(preferences.get())
     live.register()
 
 

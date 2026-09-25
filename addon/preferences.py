@@ -1,7 +1,9 @@
 import bpy
 from bpy.props import BoolProperty, IntProperty, StringProperty
 
-from .zarbo.client import DEFAULT_HOST
+from .server import http
+
+DEFAULT_HOST = "https://api.zarbo.tech"
 
 
 def get(context=None) -> "IZV_Preferences":
@@ -23,9 +25,9 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         description="Blender that writes USDZ in the background; empty = this Blender (e.g. point to 4.1 to compare)",
         subtype='FILE_PATH',
     )
-    zarbo_host: StringProperty(name="Zarbo host", default=DEFAULT_HOST)
-    zarbo_api_key: StringProperty(name="Zarbo Api-Key", subtype='PASSWORD')
-    zarbo_collection_id: IntProperty(name="Collection id", default=0, description="0 = create on first upload")
+    # Publishing lives in the web editor (Export tab); the key only feeds the local proxy.
+    zarbo_host: StringProperty(name="Zarbo host", default=DEFAULT_HOST, update=lambda self, _: push_zarbo(self))
+    zarbo_api_key: StringProperty(name="Zarbo Api-Key", subtype='PASSWORD', update=lambda self, _: push_zarbo(self))
 
     def draw(self, context):
         col = self.layout.column()
@@ -39,7 +41,11 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         col.label(text="Zarbo")
         col.prop(self, "zarbo_host")
         col.prop(self, "zarbo_api_key")
-        col.prop(self, "zarbo_collection_id")
+        col.label(text="Публикация — во вкладке «Экспорт» веб-редактора", icon='INFO')
+
+
+def push_zarbo(prefs):
+    http.set_zarbo(prefs.zarbo_host, prefs.zarbo_api_key)
 
 
 CLASSES = (IZV_Preferences,)

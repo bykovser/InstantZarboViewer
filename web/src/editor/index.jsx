@@ -8,6 +8,7 @@ import { Inspector } from './ui/Inspector.jsx';
 import { Outliner } from './ui/Outliner.jsx';
 import { ExportPanel, ScenePanel, useStore } from './ui/panels.jsx';
 import { Tabs } from './ui/widgets.jsx';
+import { ZarboPanel } from './ui/ZarboPanel.jsx';
 
 const WIDTHS = { left: [180, 600, 280], right: [260, 700, 340] };
 const widthKey = (side) => `izv.panel.${side}`;
@@ -101,7 +102,7 @@ function App({ model, store, onClose, actions }) {
         <div class="scroll">
           {tab === 'props' && <Inspector model={model} />}
           {tab === 'scene' && <ScenePanel store={store} />}
-          {tab === 'export' && <ExportPanel model={model} />}
+          {tab === 'export' && <><ExportPanel model={model} />{actions.zarbo && <div class="inspector"><ZarboPanel actions={actions.zarbo} /></div>}</>}
         </div>
       </aside>
       <Splitter side="left" />

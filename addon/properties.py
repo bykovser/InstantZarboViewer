@@ -55,20 +55,13 @@ class IZV_ExportSettings(bpy.types.PropertyGroup):
     usdz_animation: BoolProperty(name="Animation", default=True)
 
 
-class IZV_ZarboSettings(bpy.types.PropertyGroup):
-    product_name: StringProperty(name="Name")
-    description: StringProperty(name="Description")
-    tags: StringProperty(name="Tags", description="Comma separated")
-    last_embed_url: StringProperty(name="Embed URL")
-
 
 class IZV_Settings(bpy.types.PropertyGroup):
     viewer: PointerProperty(type=IZV_ViewerSettings)
     export: PointerProperty(type=IZV_ExportSettings)
-    zarbo: PointerProperty(type=IZV_ZarboSettings)
 
 
-CLASSES = (IZV_ViewerSettings, IZV_ExportSettings, IZV_ZarboSettings, IZV_Settings)
+CLASSES = (IZV_ViewerSettings, IZV_ExportSettings, IZV_Settings)
 
 
 def attach():

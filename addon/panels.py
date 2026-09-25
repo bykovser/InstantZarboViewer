@@ -72,24 +72,5 @@ class IZV_PT_Export(bpy.types.Panel):
         sub.prop(e, "usdz_animation")
 
 
-class IZV_PT_Zarbo(bpy.types.Panel):
-    bl_label = "Zarbo"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = "Zarbo"
-    bl_parent_id = "IZV_PT_Main"
 
-    def draw(self, context):
-        z = context.scene.izv.zarbo
-        col = self.layout.column()
-        col.prop(z, "product_name")
-        col.prop(z, "description")
-        col.prop(z, "tags")
-        col.operator("izv.publish_zarbo", icon='EXPORT')
-        if z.last_embed_url:
-            row = col.row()
-            row.prop(z, "last_embed_url", text="")
-            row.operator("izv.open_embed", text="", icon='URL')
-
-
-CLASSES = (IZV_PT_Main, IZV_PT_Viewer, IZV_PT_Export, IZV_PT_Zarbo)
+CLASSES = (IZV_PT_Main, IZV_PT_Viewer, IZV_PT_Export)

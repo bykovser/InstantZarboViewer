@@ -145,9 +145,24 @@ async function main() {
     editor = await mountEditor({
       viewer, store, modelUrl: active.url, modelName: active.blender ? undefined : active.name,
       onClose: () => { queue = queue.then(closeEditor).catch((e) => flash(e.message)); },
-      actions: { revert: () => revert(), hasBlender: Boolean(blenderScene) },
+      actions: { revert: () => revert(), hasBlender: Boolean(blenderScene), zarbo: blenderScene ? zarboActions : null },
     });
     if (active.snap) editor.model.restore(active.snap);
+  };
+  // What the Zarbo panel publishes: any tab's model (the open one with its current edits).
+  const zarboActions = {
+    viewer,
+    sources: () => tabs.map(({ id, name, kind, usdz, edited }) => ({ id, name, kind, usdz, edited: edited || (active.id === id && editor?.model.dirty) })),
+    activeId: () => active.id,
+    async bytes(id) {
+      const tab = tabs.find((t) => t.id === id);
+      if (tab === active && editor?.model.dirty) return new Blob([await editor.bake()], { type: 'model/gltf-binary' });
+      return (await fetch(tab.url)).blob();
+    },
+    async usdzOf(id) {
+      const tab = tabs.find((t) => t.id === id);
+      return tab?.usdz ? (await fetch(tab.usdz)).blob() : null;
+    },
   };
   const unmountEditor = () => {
     editor?.unmount();

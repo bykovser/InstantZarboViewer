@@ -54,6 +54,22 @@ export class EditorModel {
     }
   }
 
+  // A tab keeps its editing session (document + history) while another tab is on screen.
+  snapshot() {
+    return { doc: this.doc, fileName: this.fileName, undoStack: this.undoStack, redoStack: this.redoStack };
+  }
+
+  restore(snap) {
+    Object.assign(this, snap);
+    this.selection.value = null;
+    if (this.viewer.gltf) this.bind(this.viewer.gltf);
+    this.touch();
+  }
+
+  get dirty() {
+    return this.undoStack.length > 0 || this.redoStack.length > 0;
+  }
+
   get root() {
     return this.doc.getRoot();
   }

@@ -95,6 +95,7 @@ def viewer_snapshot(scene) -> dict:
         "bloomStrength": v.bloom_strength,
         "bloomRadius": v.bloom_radius,
         "bloomThreshold": v.bloom_threshold,
+        "fps": scene.render.fps / scene.render.fps_base,
     }
 
 

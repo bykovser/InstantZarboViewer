@@ -93,7 +93,6 @@ body.dropping::after {
   box-shadow: 0 2px 10px #0004;
   font: 12px system-ui, sans-serif;
 }
-#tabs[hidden] { display: none; }
 body.editing #tabs {
   left: calc(var(--ed-left, 280px) + (100vw - var(--ed-left, 280px) - var(--ed-right, 340px)) / 2);
   max-width: calc(100vw - var(--ed-left, 280px) - var(--ed-right, 340px) - 24px);
@@ -157,8 +156,8 @@ body.editing #tabs {
 #compare .cmp-reset[hidden] { display: none; }
 
 #anim {
-  position: fixed; z-index: 5; display: flex; gap: 4px; align-items: center;
-  padding: 3px; border-radius: 6px; background: #1e1f22e6; font: 12px system-ui, sans-serif;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; display: flex; gap: 6px; align-items: center;
+  padding: 4px 8px; background: #1e1f22e6; font: 12px system-ui, sans-serif;
 }
 #anim[hidden] { display: none; }
 #anim button, #anim select {
@@ -166,7 +165,10 @@ body.editing #tabs {
 }
 #anim button { width: 28px; padding: 0; cursor: pointer; }
 #anim select { max-width: 180px; }
-#anim .anim-scrub { width: 180px; accent-color: #4c8dff; }
-#anim .anim-time { min-width: 86px; color: #cfd2d8; font-variant-numeric: tabular-nums; }
+#anim .anim-scrub { flex: 1; min-width: 80px; accent-color: #4c8dff; }
+#anim .anim-time { cursor: pointer; user-select: none; min-width: 96px; color: #cfd2d8; font-variant-numeric: tabular-nums; }
 #anim .anim-speed { width: 58px; }
 #anim .anim-pingpong { display: inline-flex; align-items: center; gap: 2px; color: #cfd2d8; cursor: pointer; }
+#tabs .tab.edited .tab-name::after { content: ' ✎'; color: #e8a25c; }
+#tabs .tab.pin { font-size: 14px; padding: 2px 8px; }
+#tabs .tab:disabled { opacity: 0.35; cursor: default; }

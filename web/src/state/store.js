@@ -13,6 +13,7 @@ export const DEFAULTS = {
   bloomRadius: 0.4,
   bloomThreshold: 1,
   showLights: false,
+  fps: 24, // Blender scene fps (glTF has none); timeline frames
   syncBlender: true, // editor open: apply Blender live updates
 };
 

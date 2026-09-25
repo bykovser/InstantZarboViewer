@@ -91,8 +91,10 @@ async function main() {
   // Tabs: the Blender session (or ?model=) plus dropped files. Switching keeps the camera for A/B comparison.
   let seq = 0;
   const baseName = (url) => decodeURIComponent(url.split('/').pop().split('?')[0]);
+  // url: what the tab shows now (a baked GLB once edited); source: what "revert" goes back to.
+  // snap: the editor session (document + undo history) kept while another tab is on screen.
   const tabs = [{
-    id: ++seq, url: s.model, kind: 'gltf', usdz: s.usdz ?? null,
+    id: ++seq, url: s.model, source: s.model, kind: 'gltf', usdz: s.usdz ?? null,
     blender: !s.standalone, name: s.standalone ? baseName(s.model) : 'Blender',
   }];
   let active = tabs[0];
@@ -103,10 +105,9 @@ async function main() {
   const tabBar = Object.assign(document.createElement('nav'), { id: 'tabs' });
   document.body.append(tabBar);
   const renderTabs = () => {
-    tabBar.hidden = tabs.length < 2;
     tabBar.replaceChildren(...tabs.map((tab, i) => {
       const el = document.createElement('button');
-      el.className = `tab ${tab === active ? 'active' : ''} ${tab === compareTab ? 'b' : ''} ${tab.fresh ? 'fresh' : ''}`;
+      el.className = `tab ${tab === active ? 'active' : ''} ${tab === compareTab ? 'b' : ''} ${tab.fresh ? 'fresh' : ''} ${tab.edited ? 'edited' : ''}`;
       el.title = `${tab.name}${i < 9 ? ` — клавиша ${i + 1}, Shift+${i + 1} — сравнить (B)` : ''}`;
       el.append(Object.assign(document.createElement('span'), { className: 'tab-name', textContent: `${i + 1} · ${tab.name}` }));
       if (tab.kind === 'usd') el.append(Object.assign(document.createElement('span'), { className: 'tab-kind', textContent: 'USD' }));
@@ -117,9 +118,15 @@ async function main() {
       }
       el.addEventListener('click', (e) => (e.shiftKey ? chooseB(tab) : switchTab(tab)));
       return el;
-    }), compareButton);
+    }), pinButton, compareButton);
     compareButton.classList.toggle('active', Boolean(compareTab));
+    compareButton.disabled = tabs.length < 2;
   };
+  const pinButton = Object.assign(document.createElement('button'), {
+    className: 'tab pin', textContent: '⧉',
+    title: 'Закрепить копию: текущая модель со всеми правками — в новую вкладку (например, вариант под USDZ)',
+  });
+  pinButton.addEventListener('click', () => pinCurrent());
   const compareButton = Object.assign(document.createElement('button'), {
     className: 'tab compare', textContent: '⇆', title: 'Сравнение шторкой: активная вкладка (A) против другой (B)',
   });
@@ -136,14 +143,20 @@ async function main() {
     editButton.disabled = true;
     const { mountEditor } = await import('./editor/index.jsx');
     editor = await mountEditor({
-      viewer, store, modelUrl: active.url, modelName: active.blender ? undefined : active.name, onClose: closeEditor,
+      viewer, store, modelUrl: active.url, modelName: active.blender ? undefined : active.name,
+      onClose: () => { queue = queue.then(closeEditor).catch((e) => flash(e.message)); },
       actions: { revert: () => revert(), hasBlender: Boolean(blenderScene) },
     });
+    if (active.snap) editor.model.restore(active.snap);
   };
-  const closeEditor = () => {
+  const unmountEditor = () => {
     editor?.unmount();
     editor = null;
     editButton.disabled = false;
+  };
+  const closeEditor = async () => {
+    await stash();
+    unmountEditor();
   };
   editButton.addEventListener('click', (e) => {
     e.preventDefault();
@@ -151,12 +164,28 @@ async function main() {
   });
   let queue = Promise.resolve();
 
-  const editorTouched = () => Boolean(editor && (editor.model.history.value.undo || editor.model.history.value.redo));
+  const revokeBlob = (url, keep = []) => {
+    if (url?.startsWith('blob:') && !keep.includes(url) && !tabs.some((t) => t.url === url || t.source === url)) {
+      URL.revokeObjectURL(url);
+    }
+  };
 
-  // Show a tab. Editor edits die with the switch: live patches changed the cached scene, so it's dropped.
+  // Leaving a tab with editor changes: bake them into the tab's own GLB and keep the session.
+  const stash = async () => {
+    if (!editor?.model.dirty) return;
+    const tab = active;
+    const glb = await editor.bake();
+    const old = tab.url;
+    viewer.forget(old);
+    tab.url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+    revokeBlob(old);
+    tab.snap = editor.model.snapshot();
+    tab.edited = true;
+  };
+
   const activate = async (tab, { frame = false } = {}) => {
-    if (editorTouched()) viewer.forget(active.url);
-    if (tab.kind === 'usd') closeEditor();
+    if (tab !== active) await stash();
+    if (tab.kind === 'usd') unmountEditor();
     status.textContent = `Загрузка ${tab.name}…`;
     await viewer.loadModel(tab.url, tab.kind, { keep: true });
     if (frame) viewer.frameCamera(null);
@@ -166,33 +195,54 @@ async function main() {
     tab.fresh = false;
     // A took B's model: the old A becomes B.
     if (compareTab === tab) await setCompareTab(tabs.includes(leaving) && leaving !== tab ? leaving : null);
-    if (editor) await editor.model.load(tab.url, tab.blender ? undefined : tab.name);
+    if (editor) {
+      if (tab.snap) editor.model.restore(tab.snap);
+      else await editor.model.load(tab.url, tab.blender ? undefined : tab.name);
+    }
     showUsdz(tab.usdz);
     status.textContent = '';
     renderTabs();
     renderCompareUI();
   };
 
-  const confirmDropEdits = (what) => {
-    const edits = editor?.model.history.value.undo ?? 0;
-    return !edits || confirm(`${what}: правки редактора (${edits}) будут сброшены. Продолжить?`);
-  };
+  const hasEdits = (tab) => tab.edited || (tab === active && editor?.model.dirty);
+  const confirmDropEdits = (tab, what) => !hasEdits(tab) || confirm(`${what}: правки редактора в «${tab.name}» пропадут. Продолжить?`);
 
   const switchTab = (tab) => {
-    if (tab === active || !confirmDropEdits('Переключение вкладки')) return;
+    if (tab === active) return;
     queue = queue.then(() => activate(tab)).catch((e) => flash(e.message));
   };
 
+  // A copy of what's on screen (edits included) as a new tab: e.g. a USDZ-only variant of the same model.
+  const pinCurrent = () => {
+    queue = queue.then(async () => {
+      const bytes = editor ? await editor.bake() : await (await fetch(active.url)).arrayBuffer();
+      const type = active.kind === 'usd' ? 'model/vnd.usdz+zip' : 'model/gltf-binary';
+      const url = URL.createObjectURL(new Blob([bytes], { type }));
+      const tab = {
+        id: ++seq, url, source: url, kind: active.kind, name: `${active.name} · копия`,
+        usdz: active.kind === 'usd' ? url : null,
+      };
+      tabs.push(tab);
+      await activate(tab);
+      flash(`Закреплена копия: ${tab.name}`);
+    }).catch((e) => flash(e.message));
+  };
+
   const closeTab = (tab) => {
-    if (tab.blender) return;
-    if (tab === active && !confirmDropEdits('Закрытие вкладки')) return;
+    if (tab.blender || !confirmDropEdits(tab, 'Закрытие вкладки')) return;
     queue = queue.then(async () => {
       const i = tabs.indexOf(tab);
-      if (tab === active) await activate(tabs[i + 1] ?? tabs[i - 1]);
+      if (tab === active) {
+        editor?.model.undoStack.splice(0);
+        editor?.model.redoStack.splice(0);
+        await activate(tabs[i + 1] ?? tabs[i - 1]);
+      }
       if (tab === compareTab) await setCompareTab(tabs.find((t) => t !== tab && t !== active) ?? null);
       tabs.splice(tabs.indexOf(tab), 1);
       viewer.forget(tab.url);
-      if (tab.url.startsWith('blob:')) URL.revokeObjectURL(tab.url);
+      revokeBlob(tab.url);
+      revokeBlob(tab.source);
       renderTabs();
     }).catch((e) => flash(e.message));
   };
@@ -209,8 +259,10 @@ async function main() {
   // New Blender export: the Blender tab gets the new file; loaded now only if it's the one on screen.
   const loadBlenderScene = async (next) => {
     const tab = tabs.find((t) => t.blender);
-    if (tab.url !== next.model) viewer.forget(tab.url);
-    Object.assign(tab, { url: next.model, usdz: next.usdz ?? null });
+    const old = tab.url;
+    if (old !== next.model) viewer.forget(old);
+    Object.assign(tab, { url: next.model, source: next.model, usdz: next.usdz ?? null, snap: null, edited: false });
+    revokeBlob(old);
     store.set(next);
     if (active === tab) {
       await Promise.all([viewer.loadModel(next.model, 'gltf', { keep: true }), viewer.setEnvironment(next.environment, next.environmentRotation)]);
@@ -226,16 +278,21 @@ async function main() {
 
   // Drop the editor's changes on the active tab: latest Blender export, or the file as opened/dropped.
   const revert = () => {
-    if (!confirmDropEdits('Откат')) return;
+    if (!confirmDropEdits(active, 'Откат')) return;
     queue = queue.then(async () => {
       status.textContent = 'Откат…';
-      viewer.forget(active.url);
-      if (active.blender && blenderScene) {
+      const tab = active;
+      const old = tab.url;
+      viewer.forget(old);
+      Object.assign(tab, { url: tab.source, snap: null, edited: false });
+      revokeBlob(old);
+      if (tab.blender && blenderScene) {
         await loadBlenderScene(blenderScene);
       } else {
-        await viewer.loadModel(active.url, active.kind, { keep: true });
-        if (editor) await editor.model.load(active.url, active.blender ? undefined : active.name);
+        await viewer.loadModel(tab.url, tab.kind, { keep: true });
+        if (editor) await editor.model.load(tab.url, tab.blender ? undefined : tab.name);
       }
+      renderTabs();
       flash('Откат: правки редактора сброшены');
     }).catch((e) => flash(e.message));
   };
@@ -307,7 +364,7 @@ async function main() {
   anim.innerHTML = `
     <button class="anim-play" title="Пауза / воспроизведение (пробел)"></button>
     <input class="anim-scrub" type="range" min="0" max="1000" value="0" title="Перемотка">
-    <span class="anim-time"></span>
+    <span class="anim-time" title="Клик — секунды / кадры"></span>
     <select class="anim-speed" title="Скорость">
       <option value="0.1">×0.1</option><option value="0.25">×0.25</option><option value="0.5">×0.5</option>
       <option value="1" selected>×1</option><option value="2">×2</option>
@@ -323,11 +380,22 @@ async function main() {
   const pingPong = anim.querySelector('.anim-pingpong input');
   let scrubbing = false;
 
+  // Blender frame numbers: clip times are absolute (frame 1 = 1/fps), so frame = time × fps.
+  let inFrames = false;
+  try { inFrames = localStorage.getItem('izv.anim.frames') === '1'; } catch { /* storage blocked */ }
   const showTime = () => {
     const { time, period } = viewer.animPosition();
     if (!scrubbing) scrub.value = period ? Math.round((time / period) * 1000) : 0;
-    timeLabel.textContent = `${time.toFixed(2)} / ${period.toFixed(2)} с`;
+    const fps = store.get().fps || 24;
+    timeLabel.textContent = inFrames
+      ? `кадр ${Math.round(time * fps)} / ${Math.round(period * fps)}`
+      : `${time.toFixed(2)} / ${period.toFixed(2)} с`;
   };
+  timeLabel.addEventListener('click', () => {
+    inFrames = !inFrames;
+    try { localStorage.setItem('izv.anim.frames', inFrames ? '1' : '0'); } catch { /* storage blocked */ }
+    showTime();
+  });
   const tick = () => {
     if (!anim.hidden) showTime();
     requestAnimationFrame(tick);
@@ -357,15 +425,10 @@ async function main() {
     viewer.pingPong = pingPong.checked;
     viewer.seek(time);
   });
-  const placeAnim = () => {
-    const r = canvas.getBoundingClientRect();
-    Object.assign(anim.style, { left: `${r.left + 10}px`, top: `${r.bottom - 38}px` });
-  };
   const renderAnim = () => {
     const clips = viewer.gltf?.animations ?? [];
     anim.hidden = !clips.length;
     if (!clips.length) return;
-    placeAnim();
     clipSelect.replaceChildren(
       ...clips.map((c, i) => new Option(c.name || `Клип ${i + 1}`, c.name)),
       ...(clips.length > 1 ? [new Option('Все клипы вместе', ALL_CLIPS)] : []),
@@ -388,8 +451,6 @@ async function main() {
     togglePause();
   });
   viewer.modelListeners.add(() => renderAnim());
-  new ResizeObserver(() => !anim.hidden && placeAnim()).observe(canvas);
-  addEventListener('resize', () => !anim.hidden && placeAnim());
   renderAnim();
 
   bindDrop((file) => {
@@ -398,9 +459,8 @@ async function main() {
       flash(`${file.name}: нужен .glb или .usdz`);
       return;
     }
-    if (!confirmDropEdits('Новая вкладка')) return;
     const url = URL.createObjectURL(file);
-    const tab = { id: ++seq, url, kind, name: file.name, usdz: kind === 'usd' && /\.usdz$/i.test(file.name) ? url : null };
+    const tab = { id: ++seq, url, source: url, kind, name: file.name, usdz: kind === 'usd' && /\.usdz$/i.test(file.name) ? url : null };
     queue = queue.then(async () => {
       await activate(tab, { frame: true });
       tabs.push(tab);

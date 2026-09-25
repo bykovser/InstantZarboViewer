@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 
 import './editor.css';
+import { writeGLB } from './io.js';
 import { EditorModel } from './model.js';
 import { Inspector } from './ui/Inspector.jsx';
 import { Outliner } from './ui/Outliner.jsx';
@@ -146,5 +147,7 @@ export async function mountEditor({ viewer, store, modelUrl, modelName, onClose,
   render(<p class="ed-busy">Загрузка редактора…</p>, root);
   await model.load(modelUrl, modelName);
   render(<App model={model} store={store} onClose={onClose} actions={actions} />, root);
-  return { model, unmount };
+  // GLB of the document as edited: pinned copies and tab switches keep edits this way.
+  const bake = () => writeGLB(model.doc);
+  return { model, unmount, bake };
 }

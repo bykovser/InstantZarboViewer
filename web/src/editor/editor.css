@@ -60,7 +60,8 @@ body.editing #editor-root { display: contents; }
 #editor-root .sync.on::before { background: #3fb950; }
 
 .outliner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.scroll { overflow: auto; flex: 1; min-height: 0; }
+/* stable: the scrollbar's own show/hide (Windows WebView2 auto-hide) shouldn't shift row widths. */
+.scroll { overflow: auto; scrollbar-gutter: stable; flex: 1; min-height: 0; }
 .grow { flex: 1; min-width: 0; }
 .muted { color: var(--ed-muted); }
 .pad { padding: 12px; }

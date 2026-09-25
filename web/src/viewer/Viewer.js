@@ -80,11 +80,22 @@ export class Viewer {
     this.model = gltf.scene;
     this.scene.add(this.model);
     this.refreshTransparency();
+    this.setLightsVisible(this.lightsVisible);
     for (const fn of this.modelListeners) fn(gltf);
     return gltf;
   }
 
   modelListeners = new Set();
+
+  // model-viewer ignores KHR_lights_punctual: hidden by default so both look the same.
+  lightsVisible = false;
+
+  setLightsVisible(on) {
+    this.lightsVisible = on;
+    this.model?.traverse((o) => {
+      if (o.isLight) o.visible = on;
+    });
+  }
 
   refreshTransparency() {
     if (this.model && this.transparencyMode) this.transparency.apply(this.model, this.transparencyMode);
@@ -137,6 +148,7 @@ export class Viewer {
     this.scene.background = new Color().setRGB(...state.background, SRGBColorSpace);
     this.scene.environmentRotation.y = MathUtils.degToRad(state.environmentRotation);
     this.setBloom(state);
+    if (state.showLights !== this.lightsVisible) this.setLightsVisible(state.showLights);
     if (this.model && state.transparency !== prev.transparency) {
       this.transparencyMode = state.transparency;
       this.transparency.apply(this.model, state.transparency);

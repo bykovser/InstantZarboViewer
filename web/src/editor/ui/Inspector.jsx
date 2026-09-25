@@ -253,7 +253,7 @@ function NodeInspector({ model, node }) {
           {light.getType() === 'spot' && (
             <Row label="Конус"><span>{deg(light.getInnerConeAngle())} … {deg(light.getOuterConeAngle())}</span></Row>
           )}
-          <p class="muted">model-viewer не рендерит punctual-свет, поэтому Blender-экспорт его не пишет.</p>
+          <p class="muted">model-viewer не рендерит punctual-свет: во вьювере он скрыт, показать — «Свет из GLB» во вкладке «Сцена».</p>
         </Section>
       )}
       {camera && (

@@ -34,6 +34,9 @@ export function ScenePanel({ store }) {
           onChange={(v) => store.set({ transparency: v })}
         />
       </Row>
+      <Row label="Свет из GLB" title="Источники KHR_lights_punctual. model-viewer их не рендерит, поэтому по умолчанию скрыты">
+        <input type="checkbox" checked={s.showLights} onChange={(e) => store.set({ showLights: e.currentTarget.checked })} />
+      </Row>
       <Section title="Bloom" open={s.bloom} header={<input type="checkbox" checked={s.bloom} onChange={(e) => store.set({ bloom: e.currentTarget.checked })} />}>
         <Row label="Сила"><Slider value={s.bloomStrength} min={0} max={3} disabled={!s.bloom} onInput={(v) => store.set({ bloomStrength: v })} /></Row>
         <Row label="Радиус"><Slider value={s.bloomRadius} min={0} max={1} disabled={!s.bloom} onInput={(v) => store.set({ bloomRadius: v })} /></Row>

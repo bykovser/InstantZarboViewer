@@ -12,6 +12,7 @@ export const DEFAULTS = {
   bloomStrength: 0.15,
   bloomRadius: 0.4,
   bloomThreshold: 1,
+  showLights: false,
 };
 
 export function createStore(initial) {

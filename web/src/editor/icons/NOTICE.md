@@ -1,0 +1,1 @@
+Icons `empty`, `mesh`, `material`, `texture`, `arrow-*`, `visible` are Blender UI icons (CC BY-SA 4.0, Blender Foundation), taken from zarbo_viewer_lan 2.4. `light` and `camera` are drawn for this project in the same style.

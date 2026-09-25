@@ -227,7 +227,11 @@ function NodeInspector({ model, node }) {
   const verts = prims.reduce((n, p) => n + (p.getAttribute('POSITION')?.getCount() ?? 0), 0);
   const tris = prims.reduce((n, p) => n + (p.getIndices()?.getCount() ?? p.getAttribute('POSITION')?.getCount() ?? 0) / 3, 0);
   const fmt = (v) => v.map((x) => Number(x.toFixed(4))).join(', ');
+  const num = (x) => Number(x.toFixed(3));
+  const deg = (rad) => `${Number(((rad * 180) / Math.PI).toFixed(1))}°`;
   const all = model.materials();
+  const light = node.getExtension('KHR_lights_punctual');
+  const camera = node.getCamera();
 
   return (
     <div class="inspector">
@@ -235,6 +239,32 @@ function NodeInspector({ model, node }) {
       <Row label="Translation"><span class="mono">{fmt(node.getTranslation())}</span></Row>
       <Row label="Rotation"><span class="mono">{fmt(node.getRotation())}</span></Row>
       <Row label="Scale"><span class="mono">{fmt(node.getScale())}</span></Row>
+      {light && (
+        <Section title={`Свет: ${light.getName() || light.getType()}`}>
+          <Row label="Тип"><span>{light.getType()}</span></Row>
+          <Row label="Цвет">
+            <span class="cp-field">
+              <span class="swatch" style={{ background: linearToHex(light.getColor()) }} />
+              <span class="mono muted">{linearToHex(light.getColor())}</span>
+            </span>
+          </Row>
+          <Row label="Интенсивность" title="point/spot — кд, directional — лк"><span>{num(light.getIntensity())}</span></Row>
+          {light.getType() !== 'directional' && <Row label="Range"><span>{light.getRange() ?? '∞'}</span></Row>}
+          {light.getType() === 'spot' && (
+            <Row label="Конус"><span>{deg(light.getInnerConeAngle())} … {deg(light.getOuterConeAngle())}</span></Row>
+          )}
+          <p class="muted">model-viewer не рендерит punctual-свет, поэтому Blender-экспорт его не пишет.</p>
+        </Section>
+      )}
+      {camera && (
+        <Section title={`Камера: ${camera.getName() || camera.getType()}`}>
+          <Row label="Тип"><span>{camera.getType()}</span></Row>
+          {camera.getType() === 'perspective'
+            ? <Row label="FOV (Y)"><span>{deg(camera.getYFov())}</span></Row>
+            : <Row label="Mag X/Y"><span>{num(camera.getXMag())} / {num(camera.getYMag())}</span></Row>}
+          <Row label="Near / Far"><span>{num(camera.getZNear())} / {camera.getZFar() ?? '∞'}</span></Row>
+        </Section>
+      )}
       {mesh && (
         <Section title={`Mesh: ${mesh.getName() || '—'}`}>
           <Row label="Примитивы"><span>{prims.length}</span></Row>

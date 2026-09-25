@@ -103,8 +103,29 @@ body.editing #editor-root { display: contents; }
 .tree-controls button:hover { color: var(--ed-text); border-color: var(--ed-accent); }
 .tree-row:hover, .list li:hover { background: #2d3035; }
 .tree-row.selected, .list li.selected { background: var(--ed-sel); }
-#editor-root .twisty { border: 0; background: none; padding: 0 2px; width: 16px; color: var(--ed-muted); }
-.tree-name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+#editor-root .twisty { border: 0; background: none; padding: 0; width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
+.twisty::before { content: ''; width: 10px; height: 10px; background: var(--ed-muted); -webkit-mask: url('./icons/arrow-right.svg') center / contain no-repeat; mask: url('./icons/arrow-right.svg') center / contain no-repeat; }
+.twisty.open::before { -webkit-mask-image: url('./icons/arrow-down.svg'); mask-image: url('./icons/arrow-down.svg'); background: var(--ed-text); }
+.twisty.leaf::before { display: none; }
+.tree-name { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.tree-extra { font-size: 11px; flex: none; }
+.tree-row { gap: 5px; min-height: 20px; }
+
+/* Blender UI icons as masks: tinted per role like Blender's outliner. */
+.ico { display: inline-block; width: 14px; height: 14px; flex: none; background: currentColor; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.ico-empty { -webkit-mask-image: url('./icons/empty.svg'); mask-image: url('./icons/empty.svg'); }
+.ico-mesh { -webkit-mask-image: url('./icons/mesh.svg'); mask-image: url('./icons/mesh.svg'); }
+.ico-light { -webkit-mask-image: url('./icons/light.svg'); mask-image: url('./icons/light.svg'); }
+.ico-camera { -webkit-mask-image: url('./icons/camera.svg'); mask-image: url('./icons/camera.svg'); }
+.ico-material { -webkit-mask-image: url('./icons/material.svg'); mask-image: url('./icons/material.svg'); }
+.ico-texture { -webkit-mask-image: url('./icons/texture.svg'); mask-image: url('./icons/texture.svg'); }
+.ico-arrow-right { width: 10px; height: 10px; -webkit-mask-image: url('./icons/arrow-right.svg'); mask-image: url('./icons/arrow-right.svg'); }
+.ico-arrow-down { width: 10px; height: 10px; -webkit-mask-image: url('./icons/arrow-down.svg'); mask-image: url('./icons/arrow-down.svg'); }
+.ico.obj { color: #e8a25c; }
+.ico.data { color: #62c38a; }
+.ico.mat { color: #e87373; }
+.ico.tex { color: #d98ab4; }
+.tree-controls button { display: inline-flex; align-items: center; gap: 4px; }
 
 .list li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; }
 .list.textures img, .thumb-placeholder { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; background: #111; flex: none; }

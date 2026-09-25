@@ -324,7 +324,7 @@ async function main() {
         <button class="cmp-mode wipe active" title="Шторка">Шторка</button>
         <button class="cmp-mode side" title="Рядом">Рядом</button>
       </span>
-      <span class="cmp-hint">Alt + мышь — своя камера у стороны · Shift+клик по вкладке — сторона B</span>
+      <span class="cmp-hint">Alt + мышь — своя камера у стороны · Shift+клик по вкладке — эталон слева</span>
       <button class="cmp-reset" hidden>Сбросить смещения камер</button>
     </div>`;
   document.body.append(overlay);
@@ -342,8 +342,8 @@ async function main() {
     const side = viewer.compare.mode === 'side';
     overlay.classList.toggle('side', side);
     line.style.left = `${viewer.compare.split * 100}%`;
-    overlay.querySelector('.cmp-label.a').textContent = `A · ${active.name}`;
-    overlay.querySelector('.cmp-label.b').textContent = `B · ${compareTab.name}`;
+    overlay.querySelector('.cmp-label.a').textContent = `правка · ${active.name}`;
+    overlay.querySelector('.cmp-label.b').textContent = `эталон · ${compareTab.name}`;
     overlay.querySelector('.cmp-reset').hidden = side || !viewer.hasOffsets();
     for (const b of modeButtons) b.classList.toggle('active', b.classList.contains(side ? 'side' : 'wipe'));
   };

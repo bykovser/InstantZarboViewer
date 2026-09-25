@@ -157,7 +157,8 @@ export class Viewer {
     const sizeA = boxA.getSize(new Vector3());
     const sizeB = boxB.getSize(new Vector3());
     const gap = Math.max(sizeA.x, sizeB.x, 1) * 0.2;
-    const dx = boxA.max.x + gap - boxB.min.x;
+    // Reference (B) on the left, the edited model (A) on the right, next to the editor UI.
+    const dx = boxA.min.x - gap - boxB.max.x;
     c.model.position.x += dx;
     boxB.translate(new Vector3(dx, 0, 0));
     this.frameBox(boxA.clone().union(boxB));
@@ -175,7 +176,7 @@ export class Viewer {
 
   sideAt(clientX) {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    return (clientX - rect.left) / rect.width < this.compare.split ? 'a' : 'b';
+    return (clientX - rect.left) / rect.width < this.compare.split ? 'b' : 'a';
   }
 
   placeCamera(cam, offset) {
@@ -221,11 +222,11 @@ export class Viewer {
 
     r.setScissorTest(true);
     r.setScissor(0, 0, x, h);
-    this.transparency.update(this.camA);
-    r.render(this.scene, this.camA);
-    r.setScissor(x, 0, w - x, h);
     this.transparencyB.update(this.camB);
     r.render(this.sceneB, this.camB);
+    r.setScissor(x, 0, w - x, h);
+    this.transparency.update(this.camA);
+    r.render(this.scene, this.camA);
     r.setScissorTest(false);
   }
 

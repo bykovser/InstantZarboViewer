@@ -39,11 +39,11 @@ export class EditorModel {
     this.viewer.modelListeners.delete(this.onModel);
   }
 
-  async load(url) {
+  async load(url, name) {
     this.busy.value = 'Чтение glTF…';
     try {
       this.doc = await readDocument(url);
-      this.fileName = decodeURIComponent(url.split('/').pop().split('?')[0]) || 'model.glb';
+      this.fileName = name ?? (decodeURIComponent(url.split('/').pop().split('?')[0]) || 'model.glb');
       this.undoStack = [];
       this.redoStack = [];
       this.selection.value = null;
@@ -66,6 +66,7 @@ export class EditorModel {
   bind(gltf) {
     this.bindings = new Map();
     this.threeToIndex = new Map();
+    if (!gltf.parser) return;
     gltf.scene.traverse((obj) => {
       if (!obj.isMesh) return;
       for (const m of Array.isArray(obj.material) ? obj.material : [obj.material]) {

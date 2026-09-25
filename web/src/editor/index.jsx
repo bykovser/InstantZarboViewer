@@ -121,7 +121,7 @@ function bindPicking(viewer, model) {
   };
 }
 
-export async function mountEditor({ viewer, store, modelUrl, onClose }) {
+export async function mountEditor({ viewer, store, modelUrl, modelName, onClose }) {
   const root = document.getElementById('editor-root');
   const model = new EditorModel(viewer);
   restoreWidths();
@@ -136,7 +136,7 @@ export async function mountEditor({ viewer, store, modelUrl, onClose }) {
   };
 
   render(<p class="ed-busy">Загрузка редактора…</p>, root);
-  await model.load(modelUrl);
+  await model.load(modelUrl, modelName);
   render(<App model={model} store={store} onClose={onClose} />, root);
   return { model, unmount };
 }

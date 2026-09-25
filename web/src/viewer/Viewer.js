@@ -1,5 +1,6 @@
 import {
-  Box3, Color, MathUtils, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
+  AnimationMixer, Box3, Clock, Color, MathUtils, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3,
+  WebGLRenderer,
 } from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -37,6 +38,8 @@ export class Viewer {
     this.transparency = createTransparency(this.renderer);
     this.model = null;
     this.envSource = null;
+    this.clock = new Clock();
+    this.mixer = null;
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.renderer.setAnimationLoop(() => this.frame());
@@ -51,6 +54,8 @@ export class Viewer {
   }
 
   frame() {
+    const dt = this.clock.getDelta();
+    this.mixer?.update(dt);
     this.controls.update();
     this.transparency.update(this.camera);
     this.renderer.render(this.scene, this.camera);
@@ -67,18 +72,29 @@ export class Viewer {
     this.bloom.set({ strength: bloomStrength, radius: bloomRadius, threshold: bloomThreshold });
   }
 
-  async loadModel(url) {
-    this.loader ??= new GLTFLoader()
-      .setMeshoptDecoder(MeshoptDecoder)
-      .setDRACOLoader(new DRACOLoader().setDecoderPath('./draco/'));
-    const gltf = await this.loader.loadAsync(url);
+  // kind: 'gltf' (GLB) or 'usd' (USDZ/USDA/USDC, view only: no parser, so the editor can't bind it).
+  async loadModel(url, kind = 'gltf') {
+    let gltf;
+    if (kind === 'usd') {
+      const { USDLoader } = await import('three/addons/loaders/USDLoader.js');
+      const group = await new USDLoader().loadAsync(url);
+      gltf = { scene: group, animations: group.animations ?? [], parser: null };
+    } else {
+      this.loader ??= new GLTFLoader()
+        .setMeshoptDecoder(MeshoptDecoder)
+        .setDRACOLoader(new DRACOLoader().setDecoderPath('./draco/'));
+      gltf = await this.loader.loadAsync(url);
+    }
     if (this.model) {
+      this.mixer?.stopAllAction();
       this.scene.remove(this.model);
       disposeTree(this.model);
     }
     this.gltf = gltf;
+    this.kind = kind;
     this.model = gltf.scene;
     this.scene.add(this.model);
+    this.playAnimations(gltf.animations);
     this.refreshTransparency();
     this.setLightsVisible(this.lightsVisible);
     for (const fn of this.modelListeners) fn(gltf);
@@ -86,6 +102,13 @@ export class Viewer {
   }
 
   modelListeners = new Set();
+
+  // All clips at once: Blender exports one clip per object action, and they belong together.
+  playAnimations(clips = []) {
+    this.mixer = clips.length ? new AnimationMixer(this.model) : null;
+    for (const clip of clips) this.mixer.clipAction(clip).play();
+    this.clock.getDelta();
+  }
 
   // model-viewer ignores KHR_lights_punctual: hidden by default so both look the same.
   lightsVisible = false;
@@ -157,6 +180,14 @@ export class Viewer {
 
   // camera = { theta, phi, radius, target } in model-viewer's camera-orbit convention (degrees).
   frameCamera(camera) {
+    // Skinned bounds come from posed bones: pose them first, or USD (Z-up bind space) frames sideways.
+    this.mixer?.update(0);
+    this.model.updateMatrixWorld(true);
+    this.model.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      o.skeleton.update();
+      o.computeBoundingBox();
+    });
     const box = new Box3().setFromObject(this.model);
     const size = box.getSize(new Vector3()).length() || 1;
     const target = camera?.target ? new Vector3(...camera.target) : box.getCenter(new Vector3());

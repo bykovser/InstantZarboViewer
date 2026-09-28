@@ -1,36 +1,71 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { ADDITIONAL, cameraOrbit, zarbo } from '../../zarbo/api.js';
 import { Row, Section, Select } from './widgets.jsx';
 
-const uuid = () => crypto.randomUUID();
+// crypto.randomUUID есть только в защищённом контексте (https или localhost). Вьювер же
+// открывают и по LAN-http (http://192.168.x.x:8090) — там метод undefined и панель падала
+// на первом же рендере. crypto.getRandomValues доступен всегда.
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
 
-// Lists refresh themselves (open, after every create, window focus): no "refresh" buttons.
+// navigator.clipboard есть только в защищённом контексте (https/localhost): по LAN-http
+// (http://192.168.x.x:8090) его нет, и кнопка молча ничего не делала. Запасной путь —
+// скрытый textarea + execCommand.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* нет разрешения — пробуем старый путь */ }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '-1000px';
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+// Lists refresh on open (dropdown) and after every create: no "refresh" buttons.
 function useZarboLists() {
   const [config, setConfig] = useState(null);
   const [collections, setCollections] = useState([]);
   const [error, setError] = useState('');
-  const load = async () => {
+  const load = async (opts) => {
     try {
       const cfg = await zarbo.config();
       setConfig(cfg);
-      if (cfg.configured) setCollections(await zarbo.collections());
+      if (cfg.configured) setCollections(await zarbo.collections(opts));
       setError('');
     } catch (e) {
       setError(e.message);
     }
   };
+  // Один раз при открытии вкладки. Дальше — только по делу (раскрыли дропдаун, создали
+  // сущность): перезапрос на каждый фокус окна дёргал API без причины.
   useEffect(() => {
     load();
-    addEventListener('focus', load);
-    return () => removeEventListener('focus', load);
   }, []);
-  return { config, collections, error, reload: load };
+  const reload = () => load({ fresh: true });
+  return { config, collections, error, reload };
 }
 
 export function ZarboPanel({ actions }) {
   const { config, collections, error, reload } = useZarboLists();
   const [collectionId, setCollectionId] = useState('');
+  const [newCollection, setNewCollection] = useState('Instant Zarbo Viewer');
   const [products, setProducts] = useState([]);
   const [productId, setProductId] = useState('new');
   const [fields, setFields] = useState({ name: '', guid: uuid(), description: '', tags: '' });
@@ -38,16 +73,41 @@ export function ZarboPanel({ actions }) {
   const [usdzFrom, setUsdzFrom] = useState('auto');
   const [useCamera, setUseCamera] = useState(true);
   const [log, setLog] = useState([]);
+  const [copied, setCopied] = useState(false);
+  const hideLog = useRef(null);
+  useEffect(() => () => clearTimeout(hideLog.current), []);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const set = (patch) => setFields({ ...fields, ...patch });
 
-  const collection = collections.find((c) => String(c.id) === collectionId) ?? collections[0];
+  // Вкладку закрыли после публикации — аддон помнит ссылку и отдаёт её заново.
+  useEffect(() => {
+    if (config && config.last_publish && config.last_publish.url) setResult({ url: config.last_publish.url });
+  }, [config && config.last_publish && config.last_publish.url]);
+
+  // 'new' = коллекцию создаём в момент публикации; иначе выбранная, а если ничего не выбрано — первая.
+  const isNewCollection = collectionId === 'new';
+  const collection = isNewCollection ? null : (collections.find((c) => String(c.id) === collectionId) ?? collections[0]);
   useEffect(() => {
     if (!collection) return;
     setCollectionId(String(collection.id));
     zarbo.products(collection).then(setProducts, () => setProducts([]));
   }, [collection?.id, collections]);
+  useEffect(() => {
+    if (isNewCollection) setProducts([]);
+  }, [isNewCollection]);
+
+  const loadProducts = () => {
+    if (collection) zarbo.products(collection).then(setProducts, () => setProducts([]));
+  };
+  // Дропдаун зовёт onOpen и на mousedown, и на focus — второй вызов в пределах 800 мс глушим.
+  const openedAt = useRef(0);
+  const once = (fn) => () => {
+    const now = Date.now();
+    if (now - openedAt.current < 800) return;
+    openedAt.current = now;
+    fn();
+  };
 
   const sources = actions.sources();
   const glbSources = sources.filter((t) => t.kind === 'gltf');
@@ -68,13 +128,15 @@ export function ZarboPanel({ actions }) {
   const publish = async () => {
     setBusy(true);
     setResult(null);
+    clearTimeout(hideLog.current);
     const say = (line) => setLog((l) => [...l, line]);
     setLog([]);
     try {
       let col = collection;
       if (!col) {
         say('Коллекция…');
-        col = await zarbo.createCollection('Instant Zarbo Viewer');
+        col = await zarbo.createCollection(newCollection.trim() || 'Instant Zarbo Viewer');
+        setCollectionId(String(col.id));
       }
       let product = products.find((p) => String(p.id) === productId);
       if (!product) {
@@ -100,7 +162,10 @@ export function ZarboPanel({ actions }) {
       if (useCamera) await zarbo.updateWidget(widget.id, { camera_orbit: cameraOrbit(actions.viewer) });
       const url = zarbo.embedUrl({ ...widget, product: widget.product?.uuid ? widget.product : product });
       setResult({ url, product });
+      zarbo.publishResult(url, product.name).catch(() => {});   // чтобы ссылка не потерялась с вкладкой
       say('Готово');
+      // «Готово» — подтверждение, а не сообщение: прячем через 5 с. Ошибку оставляем на экране.
+      hideLog.current = setTimeout(() => setLog([]), 5000);
       setFields({ name: '', guid: uuid(), description: '', tags: '' });
       reload();
       zarbo.products(col).then(setProducts, () => {});
@@ -115,18 +180,26 @@ export function ZarboPanel({ actions }) {
   return (
     <Section title="Zarbo">
       {error && <p class="muted">{error}</p>}
+      <p class="muted">Стенд: {config.host}</p>
       <Row label="Коллекция">
         <Select
           value={collectionId}
-          options={collections.length ? collections.map((c) => ({ value: String(c.id), label: c.name })) : [{ value: '', label: '— создастся —' }]}
+          options={[{ value: 'new', label: '＋ Новая коллекция' }, ...collections.map((c) => ({ value: String(c.id), label: c.name }))]}
           onChange={(v) => { setCollectionId(v); setProductId('new'); }}
+          onOpen={once(reload)}
         />
       </Row>
+      {isNewCollection && (
+        <Row label="Имя коллекции">
+          <input type="text" value={newCollection} placeholder="Instant Zarbo Viewer" onInput={(e) => setNewCollection(e.currentTarget.value)} />
+        </Row>
+      )}
       <Row label="Продукт">
         <Select
           value={productId}
           options={[{ value: 'new', label: '+ Новый продукт' }, ...products.map((p) => ({ value: String(p.id), label: p.name || p.guid }))]}
           onChange={setProductId}
+          onOpen={once(loadProducts)}
         />
       </Row>
       {isNew && (
@@ -151,7 +224,15 @@ export function ZarboPanel({ actions }) {
       {result && (
         <div class="row-control">
           <input type="text" readOnly value={result.url} onFocus={(e) => e.currentTarget.select()} />
-          <button title="Скопировать" onClick={() => navigator.clipboard?.writeText(result.url)}>⧉</button>
+          <button
+            title={copied ? 'Скопировано' : 'Скопировать'}
+            onClick={async () => {
+              if (await copyText(result.url)) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }
+            }}
+          >{copied ? '✓' : '⧉'}</button>
           <button title="Открыть" onClick={() => open(result.url, '_blank', 'noopener')}>↗</button>
         </div>
       )}

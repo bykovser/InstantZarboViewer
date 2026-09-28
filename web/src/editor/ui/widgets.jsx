@@ -36,9 +36,11 @@ export function Slider({ value, min, max, step = 0.01, disabled = false, onInput
   );
 }
 
-export function Select({ value, options, onChange }) {
+// onOpen вызывается перед раскрытием списка (mousedown и focus): к этому моменту данные
+// можно обновить, чтобы список не был устаревшим.
+export function Select({ value, options, onChange, onOpen }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.currentTarget.value)}>
+    <select value={value} onChange={(e) => onChange(e.currentTarget.value)} onMouseDown={onOpen} onFocus={onOpen}>
       {options.map((o) => (typeof o === 'string' ? <option value={o}>{o}</option> : <option value={o.value}>{o.label}</option>))}
     </select>
   );

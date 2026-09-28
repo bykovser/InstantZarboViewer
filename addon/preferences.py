@@ -1,9 +1,11 @@
+from pathlib import Path
+
 import bpy
 from bpy.props import BoolProperty, IntProperty, StringProperty
 
 from .server import http
 
-DEFAULT_HOST = "https://api.zarbo.tech"
+DEFAULT_HOST = "https://api-sergkey.zarbo.works"
 
 
 def get(context=None) -> "IZV_Preferences":
@@ -26,7 +28,11 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         subtype='FILE_PATH',
     )
     # Publishing lives in the web editor (Export tab); the key only feeds the local proxy.
-    zarbo_host: StringProperty(name="Zarbo host", default=DEFAULT_HOST, update=lambda self, _: push_zarbo(self))
+    zarbo_host: StringProperty(
+        name="Zarbo host", default=DEFAULT_HOST,
+        description="Стенд Zarbo. Можно вставить и адрес страницы, где создают ключ "
+                    "(https://app-<стенд>.zarbo.works/profile): путь отбрасывается, app-/app. меняется на api-/api.",
+        update=lambda self, _: push_zarbo(self))
     zarbo_api_key: StringProperty(name="Zarbo Api-Key", subtype='PASSWORD', update=lambda self, _: push_zarbo(self))
 
     def draw(self, context):
@@ -44,7 +50,15 @@ class IZV_Preferences(bpy.types.AddonPreferences):
         col.label(text="Публикация — во вкладке «Экспорт» веб-редактора", icon='INFO')
 
 
+def store_path() -> Path | None:
+    try:
+        return Path(bpy.utils.user_resource('CONFIG', path='instant_zarbo_viewer', create=True)) / 'last_publish.json'
+    except Exception:  # noqa: BLE001 — без конфига просто не помним между запусками
+        return None
+
+
 def push_zarbo(prefs):
+    http.set_store(store_path())
     http.set_zarbo(prefs.zarbo_host, prefs.zarbo_api_key)
 
 

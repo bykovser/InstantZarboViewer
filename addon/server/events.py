@@ -41,7 +41,7 @@ def stream(handler):
         handler.wfile.flush()
         while True:
             try:
-                item = q.get(timeout=15)
+                item = q.get(timeout=5)   # пинг: по нему же замечаем закрытую вкладку
             except queue.Empty:
                 item = b": ping\n\n"
             if item is _CLOSE:

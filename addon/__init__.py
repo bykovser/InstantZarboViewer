@@ -1,7 +1,24 @@
+"""Instant Zarbo Viewer — Blender Extension. Здесь только версия, register и unregister."""
+import re
+from pathlib import Path
+
 import bpy
 
-from . import live, operators, panels, preferences, properties
-from .server import http
+
+def _read_version() -> str:
+    """Версия из манифеста: одно место правды, оно же попадает в имя зипки."""
+    try:
+        text = (Path(__file__).parent / "blender_manifest.toml").read_text(encoding="utf-8")
+        found = re.search(r'^\s*version\s*=\s*"([^"]+)"', text, re.M)
+        return found.group(1) if found else "?"
+    except OSError:
+        return "?"
+
+
+__version__ = _read_version()
+
+from . import live, operators, panels, preferences, properties  # noqa: E402
+from .server import http  # noqa: E402
 
 CLASSES = (
     *preferences.CLASSES,

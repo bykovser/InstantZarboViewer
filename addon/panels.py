@@ -1,6 +1,8 @@
 import bpy
 
-from .server import http
+from . import __version__
+from .preferences import get as get_prefs
+from .server import events, http
 
 
 class IZV_PT_Main(bpy.types.Panel):
@@ -11,12 +13,40 @@ class IZV_PT_Main(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        prefs = get_prefs(context)
+        state = http.config_state()
+
+        if not prefs.zarbo_api_key.strip():
+            box = layout.box()
+            box.alert = True
+            col = box.column(align=True)
+            col.label(text="Нет API-ключа Zarbo", icon='ERROR')
+            col.label(text="Публикация из вкладки «Экспорт» не заработает")
+            col.operator("izv.show_preferences", text="Открыть настройки", icon='PREFERENCES')
+        elif state["warm_error"]:
+            # Ключ вписан, но стенд его не принял — обычно ключ от другого стенда.
+            box = layout.box()
+            box.alert = True
+            col = box.column(align=True)
+            col.label(text="Zarbo не принял ключ", icon='ERROR')
+            col.label(text=state["warm_error"][:64])
+            col.operator("izv.show_preferences", text="Проверить настройки", icon='PREFERENCES')
+
+        layout.label(text=f"Версия {__version__}", icon='INFO')
         row = layout.row()
         row.scale_y = 2
         row.operator("izv.export_and_view", icon='URL')
         if http.is_running():
-            row = layout.row()
-            row.label(text=http.url(), icon='CHECKMARK')
+            box = layout.box()
+            viewers = events.client_count()
+            row = box.row()
+            row.label(
+                text=f"Вьювер открыт: {viewers}" if viewers else "Вьювер закрыт (вкладка не открыта)",
+                icon='CHECKMARK' if viewers else 'X',
+            )
+            row = box.row(align=True)
+            row.operator("izv.open_viewer", text="Открыть", icon='URL')
+            row.operator("izv.copy_link", text="", icon='COPYDOWN')
             row.operator("izv.stop_server", text="", icon='CANCEL')
 
 

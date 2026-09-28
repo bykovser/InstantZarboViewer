@@ -25,14 +25,14 @@ InstantZarboViewer/
 │   │   ├── glb.py          bpy.ops.export_scene.gltf
 │   │   ├── usdz.py         запуск Blender 4.1 в фоне → usdz_legacy_worker.py
 │   │   └── hdri.py         HDRI из World / кастомный файл
-│   ├── server/
-│   │   └── http.py         один ThreadingHTTPServer, опц. TLS; раздаёт web/dist + сессию
-│   └── zarbo/
-│       └── client.py       ZarboClient (Api-Key), без bpy — тестируется отдельно
+│   └── server/
+│       └── http.py         один ThreadingHTTPServer, опц. TLS; раздаёт web/dist + сессию
+│                           и проксирует /api/zarbo/* (Api-Key из preferences, только localhost)
 │
 └── web/                    вьювер, Vite + three.js, собирается в addon/web_dist
     └── src/
         ├── main.js         загрузка scene.json → Viewer
+        ├── zarbo/api.js    клиент Zarbo API + cameraOrbit(); ходит в прокси аддона
         ├── viewer/
         │   ├── Viewer.js        renderer/scene/camera/controls, цикл рендера
         │   ├── toneMapping.js   Neutral / ACES / AgX — как в MV
@@ -42,6 +42,11 @@ InstantZarboViewer/
         ├── editor/         редактор (Preact + glTF-Transform), отдельный чанк
         └── state/store.js  единое состояние настроек вьювера
 ```
+
+Версии: `addon/blender_manifest.toml` — источник правды (Blender берёт из него и имя зипки
+`instant_zarbo_viewer-<версия>.zip`), `web/package.json` — версия веб-части, держим их синхронно.
+Панель Blender печатает версию из манифеста, поэтому видно, какая сборка реально загружена
+(после установки зипки Blender надо перезапустить — модуль на лету не перечитывается).
 
 ## Поток данных
 
@@ -54,7 +59,8 @@ Blender ── Export & View ──► session dir/ (model.glb, env.hdr, scene.j
                                    │
 Browser ── fetch /api/scene ──► Viewer(three.js) ── tone mapping / env / transparency
 
-Blender ── Upload to Zarbo ──► ZarboClient: product → model(glb, usdz) → widget → PATCH camera
+Браузер (вкладка «Экспорт») ──► /api/zarbo/* (прокси аддона: Api-Key, только localhost)
+                              ──► product → model(glb, usdz) → widget → PATCH camera_orbit
                               ──► embed: https://embed.zarbo.tech/{widget.product.uuid}/{widget.id}/
 ```
 
@@ -80,23 +86,42 @@ Blender ── Upload to Zarbo ──► ZarboClient: product → model(glb, usd
 
 Реализуется через `renderer.setTransparentSort()` + правку материалов — ядро рендера не трогаем.
 
-## 2. Zarbo API (`addon/zarbo/client.py`)
+## 2. Zarbo API (`addon/server/http.py` + `web/src/zarbo/api.js`)
 
-База `{host}/api/v1`, `host` по умолчанию `https://api.zarbo.tech`, заголовок `Authorization: Api-Key <key>`.
+Публикация живёт в веб-редакторе (вкладка «Экспорт»), в Blender её нет. Страница ходит в
+`/api/zarbo/*`, сервер аддона проксирует это на `{host}/api/v1` и добавляет
+`Authorization: Api-Key <key>`: ключ лежит в preferences, в браузер не попадает, прокси отвечает
+только localhost. `GET /api/zarbo/config` → `{host, configured}` (без ключа).
 
-| Метод  | Путь                      | Зачем                                                                 |
-|--------|---------------------------|----------------------------------------------------------------------|
-| POST   | `/collections/`           | создать коллекцию (id кешируется в prefs)                             |
-| POST   | `/products/`              | продукт: `collection_id`, `guid`, `name`, `description`               |
-| PATCH  | `/products/{id}/`         | `tags` строкой                                                        |
-| POST   | `/models/`                | multipart `file`, `product_id`, `additional_data` (обязательно!)       |
-| GET    | `/widgets/?product={id}`  | есть ли виджет                                                        |
-| POST   | `/widgets/`               | создать явно — на автосоздание не полагаемся                          |
-| PATCH  | `/widgets/{id}/`          | `camera_orbit`, `shadow_intensity`, `shadow_softness` (нет в Postman)  |
+| Метод  | Путь                                  | Зачем                                                                 |
+|--------|---------------------------------------|----------------------------------------------------------------------|
+| GET    | `/collections/`                       | список коллекций (чистый массив, без пагинации)                       |
+| POST   | `/collections/`                       | создать коллекцию — в панели пункт «＋ Новая коллекция»                 |
+| GET    | `/products/?limit=1000&offset=0&collections={key}` | продукты коллекции (фильтр по `key`, не по id)        |
+| POST   | `/products/`                          | продукт: `collection_id`, `guid`, `name`, `description`               |
+| PATCH  | `/products/{id}/`                     | `tags` строкой                                                        |
+| POST   | `/models/`                            | multipart `file`, `product_id`, `additional_data` (обязательно!)       |
+| GET    | `/models/?limit=1000&offset=0&product={id}` | модели продукта; без `limit` отдаёт только первые 10          |
+| PATCH  | `/models/{id}/`                       | `additional_data: ''` — снять прежнюю модель с показа                 |
+| GET    | `/widgets/?product={id}`              | есть ли виджет                                                        |
+| POST   | `/widgets/`                           | создать явно — на автосоздание не полагаемся                          |
+| PATCH  | `/widgets/{id}/`                      | `camera_orbit`, `shadow_intensity`, `shadow_softness` (нет в Postman)  |
 
+- Проверено вживую 28.09.2026 всем конвейером: POST/PATCH принимают и multipart (как шлёт
+  `FormData`), и JSON; `camera_orbit` строка хранится как есть — `cameraOrbit()` отдаёт
+  абсолютный радиус в метрах (`23.2deg 62.3deg 4.301m`), model-viewer понимает и `m`, и `%`;
+  `DELETE /collections/{id}/` → 204 и продукты уходят каскадом.
 - `additional_data`: GLB → `"3d ar_android ar_ios"`, если есть отдельный USDZ — GLB `"3d ar_android"`, USDZ `"ar_ios"`.
-- Embed — **`https://embed.zarbo.tech/{widget["product"]["uuid"]}/{widget["id"]}/`**, не `/widgets/render/`.
-- Референс: `../blinZarboBlenderAddon/blender-addon/managers/zarbo.py`, Postman `zarbo-dev` / `release/1.44.0`.
+- Ошибки валидации приходят **массивом**: `[{"status_code":400,"detail":"…","code":"validation_error","extra_data":{"поле":["…"]}}]` — `data.detail` у массива нет, поля разбирает `errorText()` в `api.js`.
+- Embed — **`https://embed.zarbo.tech/{widget["product"]["uuid"]}/{widget["id"]}/`** (uuid ПРОДУКТА, не виджета), не `/widgets/render/`.
+- Референсы: `../blinZarboBlenderAddon/blender-addon/managers/zarbo.py` (старый аддон), `3dGen/app/zarbo/client.py` (живой прод-клиент), Postman `zarbo-dev` / `release/1.44.0`.
+- Хост в preferences понимает и адрес страницы фронта: `https://app-<стенд>.zarbo.works/profile` —
+  `api_host()` в `http.py` отбрасывает путь, меняет `app-`/`app.` на `api-`/`api.` и нормализует в
+  `https://api-<стенд>.zarbo.works`; embed-хост выводится из api-хоста так же (`embed-<стенд>`) и уезжает в
+  `/config`, чтобы `embedUrl()` не уводил на прод. По умолчанию — стенд `https://api-sergkey.zarbo.works`.
+  Стенды устроены как основной: `app.zarbo.tech` ↔ `api.zarbo.tech` ↔ `embed.zarbo.tech`.
+- Живой тест без Blender: `tools/zarbo-live-test.mjs` — Node импортирует настоящий `api.js`
+  и подменяет `fetch`, так что проверяется именно тот код, что уходит в сборку. Ключ в `IZV_ZARBO_KEY`.
 
 ## 3. USDZ (`addon/export/usdz.py` + `usdz_legacy_worker.py`)
 

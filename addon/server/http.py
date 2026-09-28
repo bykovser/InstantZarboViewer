@@ -1,7 +1,9 @@
 """LAN server: viewer bundle at /, session files at /session/*, manifest at /api/scene, SSE at /api/events,
 Zarbo API proxy at /api/zarbo/* (the key stays in Blender preferences; only this machine may use it)."""
 import json
+import re
 import socket
+import time
 import urllib.error
 import urllib.request
 import ssl
@@ -9,6 +11,7 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import events
 
@@ -18,13 +21,143 @@ CERT_DIR = ADDON_DIR / "certs"
 
 _server: ThreadingHTTPServer | None = None
 _scheme = "http"
-_zarbo = {"host": "", "key": ""}
+_zarbo = {"host": "", "input": "", "key": ""}
 LOCAL = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+_SCHEME = re.compile(r"^https?://", re.I)
+# Список коллекций греем заранее (при старте сервера) и отдаём из кеша: к моменту, когда
+# открывают вкладку «Экспорт», он уже на руках. Свежий запрос — через ?refresh=1.
+_cache = {"collections": None, "at": 0.0, "key": "", "host": "", "error": ""}
+# Последняя публикация: ссылку показываем панели заново после перезагрузки/закрытия вкладки.
+_last_publish = {"url": "", "name": "", "at": 0.0}
+_store_path: Path | None = None
+CACHE_TTL = 60
+
+
+def _fetch_collections(host: str, key: str):
+    req = urllib.request.Request(
+        host + "/api/v1/collections/",
+        headers={"Authorization": f"Api-Key {key}", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8") or "[]")
+
+
+def warm_collections():
+    """Тянем коллекции в фоне сразу после старта сервера. Ключ/хост берём из того, что
+    уже разложено в _zarbo; без них тихо выходим (панель потом отдаст понятную ошибку)."""
+    host, key = _zarbo["host"], _zarbo["key"]
+    if not (host and key):
+        return
+
+    def run():
+        try:
+            data = _fetch_collections(host, key)
+        except urllib.error.HTTPError as e:
+            _cache.update(collections=None, at=0.0, key=key, host=host,
+                          error=f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:120]}")
+            return
+        except (urllib.error.URLError, ValueError, OSError) as e:
+            _cache.update(collections=None, at=0.0, key=key, host=host, error=str(e)[:120])
+            return
+        _cache.update(collections=data, at=time.time(), key=key, host=host, error="")
+
+    threading.Thread(target=run, daemon=True, name="izv-zarbo-warm").start()
+
+
+def _retarget(url: str, *pairs) -> str:
+    """Меняет префикс хоста: app-sergkey.zarbo.works → api-sergkey.zarbo.works."""
+    parsed = urlsplit(url)
+    netloc = parsed.netloc
+    for src, dst in pairs:
+        if netloc.startswith(src):
+            netloc = dst + netloc[len(src):]
+            break
+    return f"{parsed.scheme}://{netloc}"
+
+
+def _self_addresses() -> set:
+    """Кому отдаём ключ Zarbo: loopback плюс собственные адреса машины. Вьювер часто
+    открывают по LAN-адресу (http://192.168.x.x:8090) — тогда клиент приходит именно с
+    него. Телефон в той же сети приходит с чужого IP и по-прежнему получает 403."""
+    addrs = set(LOCAL)
+    for getter in (local_ip, lambda: socket.gethostbyname(socket.gethostname())):
+        try:
+            addrs.add(getter())
+        except OSError:
+            pass
+    return addrs
+
+
+def _is_self(addr: str) -> bool:
+    return (addr[7:] if addr.startswith("::ffff:") else addr) in _self_addresses()
+
+
+def api_host(raw: str) -> str:
+    """Хост Zarbo из preferences. Можно вставлять и адрес страницы фронта
+    (https://app-sergkey.zarbo.works/profile, где берут ключ), и сам API — фронт отдаёт
+    HTML на любой путь, JSON умеет только api-*, поэтому путь отбрасываем, а app-/app.
+    меняем на api-/api. Стенды устроены так же, как основной: app.zarbo.tech ↔ api.zarbo.tech."""
+    host = (raw or "").strip().rstrip("/")
+    if not host:
+        return ""
+    if not _SCHEME.match(host):
+        host = "https://" + host
+    return _retarget(host, ("app.", "api."), ("app-", "api-"))
+
+
+def embed_host(host: str) -> str:
+    if not host:
+        return ""
+    return _retarget(host, ("api.", "embed."), ("api-", "embed-"))
+
+
+def config_state() -> dict:
+    """Состояние Zarbo-части: тот же ответ, что у GET /api/zarbo/config, — панель Blender
+    читает его напрямую, без HTTP."""
+    warm = None
+    if (_cache["collections"] is not None and _cache["key"] == _zarbo["key"]
+            and _cache["host"] == _zarbo["host"]):
+        warm = {"count": len(_cache["collections"]), "age": round(time.time() - _cache["at"], 1)}
+    return {
+        "host": _zarbo["host"],
+        "input": _zarbo["input"],
+        "embed_host": embed_host(_zarbo["host"]),
+        "configured": bool(_zarbo["key"] and _zarbo["host"]),
+        "viewers": events.client_count(),
+        "last_publish": _last_publish if _last_publish["url"] else None,
+        "warm": warm,
+        "warm_error": _cache["error"],
+    }
+
+
+def set_store(path):
+    """Файл, где помним последнюю публикацию между запусками Blender (путь даёт bpy-сторона)."""
+    global _store_path
+    _store_path = Path(path) if path else None
+    if _store_path and _store_path.is_file():
+        try:
+            _last_publish.update(json.loads(_store_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+
+
+def _save_last_publish():
+    if not _store_path:
+        return
+    try:
+        _store_path.parent.mkdir(parents=True, exist_ok=True)
+        _store_path.write_text(json.dumps(_last_publish, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def set_zarbo(host: str, key: str):
     """Called on the main thread from preferences; the handler threads only read it."""
-    _zarbo.update(host=host.rstrip("/"), key=key)
+    new_host, new_key = api_host(host), (key or "").strip()
+    if new_host != _zarbo["host"] or new_key != _zarbo["key"]:
+        # Стенд или ключ поменяли — прошлая ошибка прогрева больше не про них.
+        _cache.update(collections=None, at=0.0, error="")
+    _zarbo.update(host=new_host, input=(host or "").strip(), key=new_key)
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -66,24 +199,54 @@ class Handler(SimpleHTTPRequestHandler):
     def zarbo(self):
         if not self.path.startswith("/api/zarbo/"):
             return self.reply(405, b'{"detail": "method not allowed"}')
-        if self.client_address[0] not in LOCAL:
+        if not _is_self(self.client_address[0]):
             return self.reply(403, json.dumps({"detail": "Zarbo доступен только с этого компьютера"}).encode())
         rest = self.path[len("/api/zarbo"):]
+        query = ""
+        if "?" in rest:
+            rest, query = rest.split("?", 1)
+            # refresh — наш флаг, наверх он не уезжает.
+            query = "&".join(p for p in query.split("&") if p and not p.startswith("refresh"))
         if rest == "/config":
-            return self.reply(200, json.dumps({"host": _zarbo["host"], "configured": bool(_zarbo["key"])}).encode())
+            return self.reply(200, json.dumps(config_state()).encode())
+        if rest == "/publish" and self.command == "POST":
+            # Чисто локальное: вкладку закрыли — ссылка на виджет не потерялась.
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            except ValueError:
+                return self.reply(400, b'{"detail": "bad json"}')
+            _last_publish.update({k: str(data[k]) for k in ("url", "name") if k in data}, at=time.time())
+            _save_last_publish()
+            return self.reply(200, json.dumps({"ok": True}).encode())
+        if not _zarbo["host"]:
+            return self.reply(503, json.dumps({"detail": "Не задан хост Zarbo: Preferences → Add-ons → Instant Zarbo Viewer"}).encode())
         if not _zarbo["key"]:
             return self.reply(503, json.dumps({"detail": "Нет API-ключа Zarbo: Preferences → Add-ons → Instant Zarbo Viewer"}).encode())
+        if rest == "/collections/" and self.command == "GET" and "refresh" not in self.path:
+            cached, age = _cache["collections"], time.time() - _cache["at"]
+            if (cached is not None and _cache["key"] == _zarbo["key"]
+                    and _cache["host"] == _zarbo["host"] and age < CACHE_TTL):
+                return self.reply(200, json.dumps(cached).encode())
         length = int(self.headers.get("Content-Length") or 0)
         headers = {"Authorization": f"Api-Key {_zarbo['key']}", "Accept": "application/json"}
         if self.headers.get("Content-Type"):
             headers["Content-Type"] = self.headers["Content-Type"]
         req = urllib.request.Request(
-            _zarbo["host"] + "/api/v1" + rest, data=self.rfile.read(length) if length else None,
+            _zarbo["host"] + "/api/v1" + rest + (("?" + query) if query else ""),
+            data=self.rfile.read(length) if length else None,
             headers=headers, method=self.command,
         )
         try:
             with urllib.request.urlopen(req, timeout=600) as resp:
-                self.reply(resp.status, resp.read(), resp.headers.get("Content-Type", "application/json"))
+                body = resp.read()
+                if rest == "/collections/" and self.command == "GET":
+                    try:
+                        _cache.update(collections=json.loads(body.decode("utf-8")), at=time.time(),
+                                      key=_zarbo["key"], host=_zarbo["host"])
+                    except ValueError:
+                        pass
+                self.reply(resp.status, body, resp.headers.get("Content-Type", "application/json"))
         except urllib.error.HTTPError as e:
             self.reply(e.code, e.read(), e.headers.get("Content-Type", "application/json"))
         except urllib.error.URLError as e:
@@ -147,6 +310,7 @@ def start(session_dir: Path, port: int, use_https: bool) -> str:
 
     threading.Thread(target=server.serve_forever, daemon=True, name="izv-http").start()
     _server, _scheme = server, "https" if use_https else "http"
+    warm_collections()
     return url()
 
 

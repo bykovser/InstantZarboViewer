@@ -4,6 +4,7 @@ import json
 import re
 import socket
 import time
+import traceback
 import urllib.error
 import urllib.request
 import ssl
@@ -189,6 +190,17 @@ class Handler(SimpleHTTPRequestHandler):
 
     do_PATCH = do_DELETE = do_PUT = do_POST
 
+    def _drain(self):
+        """Дочитать тело запроса, даже если отвечаем не глядя в него: иначе Windows закрывает
+        соединение с непрочитанными данными (RST), и браузер пишет «Failed to fetch» вместо
+        нашего 403/503/405."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            try:
+                self.rfile.read(length)
+            except OSError:
+                pass
+
     def reply(self, status: int, body: bytes, ctype: str = "application/json"):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
@@ -198,8 +210,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def zarbo(self):
         if not self.path.startswith("/api/zarbo/"):
+            self._drain()
             return self.reply(405, b'{"detail": "method not allowed"}')
         if not _is_self(self.client_address[0]):
+            self._drain()
             return self.reply(403, json.dumps({"detail": "Zarbo доступен только с этого компьютера"}).encode())
         rest = self.path[len("/api/zarbo"):]
         query = ""
@@ -220,14 +234,18 @@ class Handler(SimpleHTTPRequestHandler):
             _save_last_publish()
             return self.reply(200, json.dumps({"ok": True}).encode())
         if not _zarbo["host"]:
+            self._drain()
             return self.reply(503, json.dumps({"detail": "Не задан хост Zarbo: Preferences → Add-ons → Instant Zarbo Viewer"}).encode())
         if not _zarbo["key"]:
+            self._drain()
             return self.reply(503, json.dumps({"detail": "Нет API-ключа Zarbo: Preferences → Add-ons → Instant Zarbo Viewer"}).encode())
         if rest == "/collections/" and self.command == "GET" and "refresh" not in self.path:
             cached, age = _cache["collections"], time.time() - _cache["at"]
             if (cached is not None and _cache["key"] == _zarbo["key"]
                     and _cache["host"] == _zarbo["host"] and age < CACHE_TTL):
                 return self.reply(200, json.dumps(cached).encode())
+        # Дальше всё — поход наверх. Ошибка обязана стать ответом, а не оборванным
+        # соединением: иначе браузер скажет «Failed to fetch» без причины.
         length = int(self.headers.get("Content-Length") or 0)
         headers = {"Authorization": f"Api-Key {_zarbo['key']}", "Accept": "application/json"}
         if self.headers.get("Content-Type"):
@@ -251,6 +269,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.reply(e.code, e.read(), e.headers.get("Content-Type", "application/json"))
         except urllib.error.URLError as e:
             self.reply(502, json.dumps({"detail": f"Zarbo недоступен: {e.reason}"}).encode())
+        except Exception as e:  # noqa: BLE001 — что угодно, но ответ уйти обязан
+            traceback.print_exc()
+            self.reply(502, json.dumps({"detail": f"{type(e).__name__}: {e}"}).encode())
 
     def translate_path(self, path):
         clean = path.split("?", 1)[0].split("#", 1)[0]

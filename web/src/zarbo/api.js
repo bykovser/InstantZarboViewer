@@ -36,7 +36,14 @@ function errorText(method, path, status, data) {
 }
 
 async function call(method, path, body) {
-  const res = await fetch(`./api/zarbo${path}`, { method, body });
+  let res;
+  try {
+    res = await fetch(`./api/zarbo${path}`, { method, body });
+  } catch {
+    // fetch бросает только на сетевой ошибке: сервер аддона не поднят (или вкладка осталась
+    // от прошлого запуска Blender). «Failed to fetch» ничего не объясняет, поэтому говорим прямо.
+    throw new Error(`${method} ${path}: аддон не отвечает — сервер в Blender не запущен. Нажмите «Export and View» и обновите страницу`);
+  }
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }

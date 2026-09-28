@@ -1,11 +1,16 @@
 body.editing {
-  --ed-bg: #1e1f22;
-  --ed-panel: #26282c;
-  --ed-line: #36383d;
-  --ed-text: #d7d9de;
-  --ed-muted: #8b8f98;
-  --ed-accent: #4c8dff;
-  --ed-sel: #2f4a7a;
+  /* Палитра и шрифт — в theme.css (общие с вьювером). Тут только роли редактора. */
+  --ed-bg: var(--z-bg);              /* фон приложения */
+  --ed-panel: var(--z-surface);      /* панели и карточки */
+  --ed-panel-2: var(--z-surface);    /* всплывающие блоки */
+  --ed-control: var(--z-bg);         /* поля, как в приложении: заливка, не рамка */
+  --ed-hover: var(--z-bg);
+  --ed-sunken: var(--z-bg);          /* вложенные блоки: слоты, превью */
+  --ed-line: var(--z-border);
+  --ed-text: var(--z-accent);        /* заголовки и значения — тёмный navy */
+  --ed-muted: var(--z-text);         /* подписи — muted purple */
+  --ed-accent: var(--z-primary);
+  --ed-sel: var(--z-secondary);
 
   display: grid;
   grid-template-columns: var(--ed-left, 280px) minmax(0, 1fr) var(--ed-right, 340px);
@@ -13,7 +18,7 @@ body.editing {
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--ed-bg);
   color: var(--ed-text);
-  font: 12px/1.35 system-ui, sans-serif;
+  font: 12px/1.35 var(--ed-font);
 }
 
 body.editing #view {
@@ -51,9 +56,17 @@ body.editing #editor-root { display: contents; }
   gap: 4px;
   align-items: center;
   padding: 8px;
-  border-bottom: 1px solid var(--ed-line);
+  /* Слева место под ручку сворачивания: она вне потока, но контент под неё не заезжает. */
+  padding-left: 26px;
+  background: var(--z-primary);
+  color: #fff;
+  border-bottom: 1px solid var(--z-primary);
 }
 .ed-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* В хедере — белые элементы на фирменном фоне, как активный пункт сайдбара в Zarbo. */
+#editor-root .ed-header button { background: none; border-color: #ffffff40; color: #fff; }
+#editor-root .ed-header button:hover:not(:disabled) { border-color: #fff; }
+#editor-root .ed-header .muted, #editor-root .ed-header .sync { color: #ffffffcc; }
 #editor-root .sync { display: inline-flex; align-items: center; gap: 4px; color: var(--ed-muted); }
 #editor-root .sync::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #666; }
 #editor-root .sync.on { color: var(--ed-text); }
@@ -61,19 +74,35 @@ body.editing #editor-root { display: contents; }
 
 .outliner { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 /* stable: the scrollbar's own show/hide (Windows WebView2 auto-hide) shouldn't shift row widths. */
-.scroll { overflow: auto; scrollbar-gutter: stable; flex: 1; min-height: 0; }
+.scroll { overflow: auto; scrollbar-gutter: stable; flex: 1; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--z-secondary) var(--z-surface); }
 .grow { flex: 1; min-width: 0; }
 .muted { color: var(--ed-muted); }
 .pad { padding: 12px; }
 .mono { font-family: ui-monospace, monospace; font-size: 11px; }
 
-#editor-root button, #editor-root select, #editor-root input[type=text], #editor-root input[type=number] {
-  background: #33363b;
-  color: var(--ed-text);
-  border: 1px solid var(--ed-line);
-  border-radius: 4px;
+/* Кнопки — лавандовые чипы с фиолетовым текстом (как «+», поиск, ⋮ в приложении). */
+#editor-root button {
+  background: var(--z-secondary);
+  color: var(--z-primary);
+  border: 1px solid transparent;
+  border-radius: var(--ed-radius);
   font: inherit;
-  padding: 1px 5px;
+  padding: 1px 6px;
+}
+/* Поля — заливка светлой лавандой без рамки; рамка появляется на hover/focus. */
+#editor-root select, #editor-root input[type=text], #editor-root input[type=number] {
+  background: var(--ed-control);
+  color: var(--z-accent);
+  border: 1px solid transparent;
+  border-radius: var(--ed-radius);
+  font: inherit;
+  padding: 1px 7px;
+}
+#editor-root select:hover, #editor-root input[type=text]:hover, #editor-root input[type=number]:hover { border-color: var(--z-border); }
+#editor-root select:focus, #editor-root input[type=text]:focus, #editor-root input[type=number]:focus {
+  outline: none;
+  border-color: var(--z-primary);
+  background: var(--z-surface);
 }
 /* Spin buttons appear on hover and shift the digits: the source of the panel jitter. */
 #editor-root input[type=number] { appearance: textfield; -moz-appearance: textfield; }
@@ -81,20 +110,20 @@ body.editing #editor-root { display: contents; }
 #editor-root input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #editor-root button:hover:not(:disabled) { border-color: var(--ed-accent); }
 #editor-root button:disabled { opacity: 0.4; }
-#editor-root button.primary { background: var(--ed-accent); border-color: var(--ed-accent); color: #fff; padding: 6px 12px; margin-top: 8px; width: 100%; }
+#editor-root button.primary { background: var(--z-primary); border-color: var(--z-primary); color: #fff; padding: 6px 12px; margin-top: 8px; width: 100%; }
 #editor-root a { color: var(--ed-accent); }
 
-.tabs { display: flex; border-bottom: 1px solid var(--ed-line); }
+.tabs { display: flex; gap: 4px; padding: 6px; background: var(--z-surface); border-bottom: 1px solid var(--z-border); }
 #editor-root .tabs button {
   flex: 1;
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   background: none;
-  padding: 8px 4px;
-  color: var(--ed-muted);
-  border-bottom: 2px solid transparent;
+  padding: 6px 4px;
+  color: var(--z-text);
 }
-#editor-root .tabs button.active { color: var(--ed-text); border-bottom-color: var(--ed-accent); }
+#editor-root .tabs button:hover { background: var(--z-secondary); color: var(--z-primary); }
+#editor-root .tabs button.active { background: var(--z-primary); color: #fff; }
 
 .tree, .tree ul, .list { list-style: none; margin: 0; padding: 0; }
 .tree-row {
@@ -106,10 +135,11 @@ body.editing #editor-root { display: contents; }
   white-space: nowrap;
 }
 .tree-controls { display: flex; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--ed-line); }
-.tree-controls button { border: 1px solid var(--ed-line); background: none; color: var(--ed-muted); border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.tree-controls button { border: 0; background: var(--z-secondary); color: var(--z-primary); border-radius: var(--ed-radius); padding: 2px 8px; font-size: 12px; cursor: pointer; }
 .tree-controls button:hover { color: var(--ed-text); border-color: var(--ed-accent); }
-.tree-row:hover, .list li:hover { background: #2d3035; }
-.tree-row.selected, .list li.selected { background: var(--ed-sel); }
+.tree-row:hover, .list li:hover { background: var(--ed-hover); }
+.tree-row.selected, .list li.selected { background: var(--z-primary); color: #fff; }
+.tree-row.selected .tree-extra, .list li.selected .tree-extra, .tree-row.selected .muted { color: #ffffffcc; }
 #editor-root .twisty { border: 0; background: none; padding: 0; width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
 .twisty::before { content: ''; width: 10px; height: 10px; background: var(--ed-muted); -webkit-mask: url('./icons/arrow-right.svg') center / contain no-repeat; mask: url('./icons/arrow-right.svg') center / contain no-repeat; }
 .twisty.open::before { -webkit-mask-image: url('./icons/arrow-down.svg'); mask-image: url('./icons/arrow-down.svg'); background: var(--ed-text); }
@@ -135,7 +165,7 @@ body.editing #editor-root { display: contents; }
 .tree-controls button { display: inline-flex; align-items: center; gap: 4px; }
 
 .list li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; }
-.list.textures img, .thumb-placeholder { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; background: #111; flex: none; }
+.list.textures img, .thumb-placeholder { width: 40px; height: 40px; object-fit: cover; border-radius: 3px; background: var(--ed-sunken); border: 1px solid var(--ed-line); flex: none; }
 .thumb-placeholder { display: grid; place-items: center; font-size: 10px; color: var(--ed-muted); }
 
 .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0006; flex: none; }
@@ -152,12 +182,13 @@ body.editing #editor-root { display: contents; }
 #editor-root .slider input[type=number] { width: 50px; }
 #editor-root input[type=color] { width: 44px; height: 22px; padding: 0; border: 1px solid var(--ed-line); background: none; border-radius: 4px; }
 
-.section { border: 1px solid var(--ed-line); border-radius: 5px; }
+.section { border: 0; border-radius: var(--ed-radius); background: var(--z-secondary); padding-bottom: 4px; }
 .section-head { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
-#editor-root .section-toggle { flex: 1; text-align: left; border: 0; background: none; padding: 4px 6px; font-weight: 600; }
-.section-body { display: grid; gap: 4px; padding: 2px 6px 6px; }
+#editor-root .section-toggle { flex: 1; text-align: left; border: 0; background: none; padding: 7px 8px; font-weight: 700; color: var(--z-primary); }
+#editor-root .section-toggle:hover { background: none; }
+.section-body { display: grid; gap: 4px; margin: 0 4px; padding: 4px 6px 6px; background: var(--z-surface); border-radius: 8px; }
 
-.slot { display: flex; gap: 6px; padding: 4px; border-radius: 4px; background: #202226; outline: 1px dashed transparent; }
+.slot { display: flex; gap: 6px; padding: 4px; border-radius: 4px; background: var(--ed-sunken); outline: 1px dashed transparent; }
 .slot.drag { outline-color: var(--ed-accent); background: #243149; }
 .slot-body > select { width: 100%; }
 .slot-uv { display: flex; align-items: center; gap: 3px; color: var(--ed-muted); }
@@ -173,10 +204,10 @@ body.editing #editor-root { display: contents; }
   padding: 10px;
   display: grid;
   gap: 8px;
-  background: #2b2d31;
+  background: var(--ed-panel-2);
   border: 1px solid var(--ed-line);
   border-radius: 8px;
-  box-shadow: 0 8px 24px #0009;
+  box-shadow: 0 8px 24px #23245126;
 }
 .cp-sv {
   position: relative;
@@ -229,7 +260,7 @@ body.editing #editor-root { display: contents; }
 .cp-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
 #editor-root .cp-swatch { width: 20px; height: 20px; padding: 0; border-radius: 4px; border: 1px solid #0008; }
 .slot-thumb {
-  width: 44px; height: 44px; flex: none; border-radius: 4px; background: #111; padding: 0; border: 0;
+  width: 44px; height: 44px; flex: none; border-radius: 8px; background: var(--z-surface); padding: 0; border: 1px dashed var(--z-border);
   display: grid; place-items: center; overflow: hidden; cursor: pointer; color: var(--ed-muted);
 }
 .slot-thumb:hover { outline: 1px solid var(--ed-accent); }
@@ -242,6 +273,45 @@ body.editing #editor-root { display: contents; }
 .cp-thumb-wrap { display: contents; }
 #editor-root .slot-color { box-shadow: inset 0 0 0 1px #fff2; border: 1px solid #0008; }
 .slot-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+
+/* Свёрнутые панели: место уходит вьюпорту, с края остаётся «рельса» со стрелкой. */
+body.editing.no-left { --ed-left: 0px; }
+body.editing.no-left .ed-left, body.editing.no-left .ed-split.left { display: none; }
+body.editing.no-right { --ed-right: 0px; }
+body.editing.no-right .ed-right, body.editing.no-right .ed-split.right { display: none; }
+
+/* Ручка сворачивания: всегда у края экрана, position: fixed — значит клик по ней ничего
+   не двигает внутри панели, а в свёрнутом виде она остаётся на том же месте. */
+#editor-root .ed-fold {
+  position: fixed;
+  top: 6px;
+  z-index: 7;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 6px;
+  background: var(--z-primary);
+  color: #fff;
+  border: 1px solid #ffffff40;
+}
+#editor-root .ed-fold:hover:not(:disabled) { background: var(--z-accent); border-color: #fff; }
+#editor-root .ed-fold.left { left: 2px; }
+#editor-root .ed-fold.right { right: 2px; }
+
+.ed-right-head {
+  display: flex;
+  align-items: center;
+  padding-right: 26px;
+  background: var(--z-surface);
+  border-bottom: 1px solid var(--z-border);
+}
+.ed-right-head .tabs { flex: 1; border-bottom: 0; }
+#editor-root .ed-right-head .tabs { border-bottom: 0; }
 
 .ed-busy {
   position: fixed;

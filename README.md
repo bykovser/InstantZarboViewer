@@ -1,5 +1,7 @@
 # Instant Zarbo Viewer
 
+Репозиторий: <https://github.com/bykovser/InstantZarboViewer>
+
 Blender → LAN-превью в браузере (three.js, совпадает с model-viewer) → публикация в Zarbo.
 Переписывание `zarbo_viewer_lan` 2.4 с нуля. Устройство — в [ARCHITECTURE.md](ARCHITECTURE.md).
 

@@ -1,3 +1,4 @@
+import './theme.css';   // палитра и шрифт Zarbo — до всего остального
 import { connectLive } from './live.js';
 import { createStore } from './state/store.js';
 import { ALL_CLIPS, Viewer } from './viewer/Viewer.js';
@@ -38,6 +39,9 @@ function showUsdz(url) {
 }
 
 const USD_EXT = ['usdz', 'usda', 'usdc', 'usd'];
+
+// Тот же критерий, что скрывает «Редактор» в CSS: узкий экран или тач-устройство.
+const desktop = () => !matchMedia('(max-width: 900px)').matches && !matchMedia('(pointer: coarse)').matches;
 
 function fileKind(name) {
   const ext = name.split('.').pop().toLowerCase();
@@ -503,7 +507,9 @@ async function main() {
   if (params.has('debug')) {
     window.izv = { viewer, store, tabs, get active() { return active; }, get compareTab() { return compareTab; }, get editor() { return editor; } };
   }
-  if (params.has('edit')) await openEditor();
+  // Редактор — основная поверхность, стартовая страничка не нужна: открываем сразу.
+  // На телефоне (узкий экран / тач) остаётся чистый вьювер — там редактор не помещается.
+  if (params.has('edit') || (desktop() && active.kind === 'gltf')) await openEditor();
 
   if (s.standalone) return;
 

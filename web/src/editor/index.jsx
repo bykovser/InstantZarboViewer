@@ -29,38 +29,68 @@ function restoreWidths() {
 }
 
 // Drag handle on the inner edge of a side panel; double click resets the width.
-function Splitter({ side }) {
+function Splitter({ side, onCollapse, onReset }) {
   const onDown = (e) => {
     e.preventDefault();
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     el.classList.add('active');
     let w;
-    const move = (ev) => { w = setWidth(side, side === 'left' ? ev.clientX : innerWidth - ev.clientX); };
-    const up = () => {
+    const stop = () => {
       el.removeEventListener('pointermove', move);
       el.classList.remove('active');
+    };
+    const move = (ev) => {
+      const raw = side === 'left' ? ev.clientX : innerWidth - ev.clientX;
+      // Потянули ниже минимума — не упираемся в предел, а убираем панель целиком.
+      if (raw < WIDTHS[side][0] - 40) {
+        stop();
+        onCollapse();
+        return;
+      }
+      w = setWidth(side, raw);
+    };
+    const up = () => {
+      stop();
       try { if (w) localStorage.setItem(widthKey(side), String(w)); } catch { /* storage blocked */ }
     };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up, { once: true });
   };
-  const reset = () => {
-    setWidth(side, WIDTHS[side][2]);
-    try { localStorage.removeItem(widthKey(side)); } catch { /* storage blocked */ }
-  };
-  return <div class={`ed-split ${side}`} onPointerDown={onDown} onDblClick={reset} title="Потяните, чтобы изменить ширину; двойной клик — сброс" />;
+  return <div class={`ed-split ${side}`} onPointerDown={onDown} onDblClick={onReset} title="Потяните, чтобы изменить ширину; ниже минимума — панель свернётся; двойной клик — сброс" />;
 }
 
 function App({ model, store, onClose, actions }) {
   const [tab, setTab] = useState('props');
+  const [closed, setClosed] = useState({ left: false, right: false });
+  const collapse = (side) => {
+    document.body.classList.add(`no-${side}`);
+    document.body.style.setProperty(`--ed-${side}`, '0px');   // inline-переменная перебивает любой класс
+    setClosed((c) => ({ ...c, [side]: true }));
+  };
+  // Разворот даёт дефолтную ширину, а не последнюю натащенную.
+  const expand = (side) => {
+    setWidth(side, WIDTHS[side][2]);
+    try { localStorage.removeItem(widthKey(side)); } catch { /* storage blocked */ }
+    document.body.classList.remove(`no-${side}`);
+    setClosed((c) => ({ ...c, [side]: false }));
+  };
+  const resetWidth = (side) => {
+    setWidth(side, WIDTHS[side][2]);
+    try { localStorage.removeItem(widthKey(side)); } catch { /* storage blocked */ }
+  };
+  useEffect(() => () => document.body.classList.remove('no-left', 'no-right'), []);
   const { syncBlender } = useStore(store);
   const h = model.history.value;
   const busy = model.busy.value;
 
   useEffect(() => {
     const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.target.matches('input[type=text], input[type=number]')) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      // В текстовом поле Ctrl+Z — отмена ввода, там не перехватываем. Числовые поля не трогаем:
+      // в них undo модели ожидаемее, чем отмена набора (в них и так только цифры).
+      const t = e.target;
+      if (t && (t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type !== 'number'))) return;
       const key = e.key.toLowerCase();
       if (key === 'z' && !e.shiftKey) model.undo();
       else if (key === 'y' || (key === 'z' && e.shiftKey)) model.redo();
@@ -95,18 +125,31 @@ function App({ model, store, onClose, actions }) {
         <Outliner model={model} />
       </aside>
       <aside class="ed-right">
-        <Tabs
-          tabs={[{ id: 'props', label: 'Свойства' }, { id: 'scene', label: 'Сцена' }, { id: 'export', label: 'Экспорт' }]}
-          value={tab} onChange={setTab}
-        />
+        <div class="ed-right-head">
+          <Tabs
+            tabs={[{ id: 'props', label: 'Свойства' }, { id: 'scene', label: 'Сцена' }, { id: 'export', label: 'Экспорт' }]}
+            value={tab} onChange={setTab}
+          />
+        </div>
         <div class="scroll">
           {tab === 'props' && <Inspector model={model} />}
           {tab === 'scene' && <ScenePanel store={store} />}
           {tab === 'export' && <><ExportPanel model={model} />{actions.zarbo && <div class="inspector"><ZarboPanel actions={actions.zarbo} /></div>}</>}
         </div>
       </aside>
-      <Splitter side="left" />
-      <Splitter side="right" />
+      <Splitter side="left" onCollapse={() => collapse('left')} onReset={() => resetWidth('left')} />
+      <Splitter side="right" onCollapse={() => collapse('right')} onReset={() => resetWidth('right')} />
+      {/* Ручка живёт у края экрана и на месте в обоих состояниях: ничего внутри панели не сдвигает. */}
+      <button
+        class="ed-fold left"
+        title={closed.left ? 'Выдвинуть аутлайнер' : 'Задвинуть аутлайнер'}
+        onClick={() => (closed.left ? expand('left') : collapse('left'))}
+      >{closed.left ? '›' : '‹'}</button>
+      <button
+        class="ed-fold right"
+        title={closed.right ? 'Выдвинуть панель свойств' : 'Задвинуть панель свойств'}
+        onClick={() => (closed.right ? expand('right') : collapse('right'))}
+      >{closed.right ? '‹' : '›'}</button>
       {busy && <div class="ed-busy">{busy}</div>}
     </>
   );

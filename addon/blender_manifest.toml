@@ -1,10 +1,11 @@
 schema_version = "1.0.0"
 
 id = "instant_zarbo_viewer"
-version = "3.0.0"
+version = "3.2.0"
 name = "Instant Zarbo Viewer"
 tagline = "Preview in LAN browser like model-viewer and publish to Zarbo"
 maintainer = "BykovSer"
+website = "https://github.com/bykovser/InstantZarboViewer"
 type = "add-on"
 blender_version_min = "4.2.0"
 license = ["SPDX:GPL-3.0-or-later"]

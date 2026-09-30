@@ -73,12 +73,41 @@ export class Viewer {
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
-  // PNG текущего вида. toBlob нужно звать сразу после отрисовки: preserveDrawingBuffer
-  // выключен, и WebGL успевает очистить буфер к следующему кадру.
-  snapshot(type = 'image/png') {
+  // Квадратный кадр для превью продукта: в Zarbo картинка 900x900. Рендерим временно
+  // квадратным буфером и возвращаем всё как было. Угол обзора сохраняем ГОРИЗОНТАЛЬНЫЙ,
+  // поэтому то, что видно во вьюпорте, не обрежется — по вертикали просто добавится места.
+  // toBlob зовём сразу после отрисовки: preserveDrawingBuffer выключен, WebGL успевает
+  // очистить буфер к следующему кадру.
+  async snapshot(size = 900, type = 'image/png') {
+    const renderer = this.renderer;
+    const canvas = renderer.domElement;
+    const prev = {
+      w: canvas.clientWidth || canvas.width,
+      h: canvas.clientHeight || canvas.height,
+      aspect: this.camera.aspect,
+      fov: this.camera.fov,
+      ratio: renderer.getPixelRatio(),
+    };
+    const hfov = 2 * Math.atan(Math.tan((prev.fov * Math.PI) / 360) * prev.aspect);
+
+    renderer.setPixelRatio(1);
+    renderer.setSize(size, size, false);
+    this.camera.aspect = 1;
+    this.camera.fov = (hfov * 180) / Math.PI;
+    this.camera.updateProjectionMatrix();
+    this.bloom?.setSize(size, size, 1);
     this.frame();
-    const canvas = this.renderer.domElement;
-    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), type));
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, type));
+
+    renderer.setPixelRatio(prev.ratio);
+    renderer.setSize(prev.w, prev.h, false);
+    this.camera.aspect = prev.aspect;
+    this.camera.fov = prev.fov;
+    this.camera.updateProjectionMatrix();
+    this.bloom?.setSize(prev.w, prev.h, prev.ratio);
+    this.frame();
+    return blob;
   }
 
   resize() {

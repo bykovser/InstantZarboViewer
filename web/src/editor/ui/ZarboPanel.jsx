@@ -195,9 +195,9 @@ export function ZarboPanel({ actions }) {
       const existing = products.find((p) => String(p.id) === productId);
       if (existing) {
         await zarbo.setPreview(existing.id, blob);
-        setLog(['Превью загружено в продукт']);
+        setLog(['Превью 900×900 загружено в продукт']);
       } else {
-        setLog(['Превью снято — уйдёт вместе с новым продуктом']);
+        setLog(['Превью 900×900 снято — уйдёт вместе с новым продуктом']);
       }
     } catch (e) {
       setLog([`Ошибка: ${e.message}`]);

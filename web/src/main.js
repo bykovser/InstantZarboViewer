@@ -156,6 +156,7 @@ async function main() {
   // What the Zarbo panel publishes: any tab's model (the open one with its current edits).
   const zarboActions = {
     viewer,
+    snapshot: () => viewer.snapshot(),
     sources: () => tabs.map(({ id, name, kind, usdz, edited }) => ({ id, name, kind, usdz, edited: edited || (active.id === id && editor?.model.dirty) })),
     activeId: () => active.id,
     async bytes(id) {

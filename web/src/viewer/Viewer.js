@@ -73,6 +73,14 @@ export class Viewer {
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
+  // PNG текущего вида. toBlob нужно звать сразу после отрисовки: preserveDrawingBuffer
+  // выключен, и WebGL успевает очистить буфер к следующему кадру.
+  snapshot(type = 'image/png') {
+    this.frame();
+    const canvas = this.renderer.domElement;
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), type));
+  }
+
   resize() {
     const { clientWidth: w, clientHeight: h } = this.renderer.domElement;
     this.renderer.setSize(w, h, false);

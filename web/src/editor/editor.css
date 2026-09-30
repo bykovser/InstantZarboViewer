@@ -303,6 +303,9 @@ body.editing.no-right .ed-right, body.editing.no-right .ed-split.right { display
 #editor-root .ed-fold.left { left: 2px; }
 #editor-root .ed-fold.right { right: 2px; }
 
+/* Миниатюра снятого превью рядом с кнопкой. */
+.preview-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--z-border); }
+
 .ed-right-head {
   display: flex;
   align-items: center;

@@ -73,6 +73,8 @@ export function ZarboPanel({ actions }) {
   const [usdzFrom, setUsdzFrom] = useState('auto');
   const [useCamera, setUseCamera] = useState(true);
   const [log, setLog] = useState([]);
+  const [preview, setPreview] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const hideLog = useRef(null);
   useEffect(() => () => clearTimeout(hideLog.current), []);
@@ -141,11 +143,15 @@ export function ZarboPanel({ actions }) {
       let product = products.find((p) => String(p.id) === productId);
       if (!product) {
         say('Продукт…');
-        product = await zarbo.createProduct(col.id, { ...fields, name: fields.name || source.name });
+        product = await zarbo.createProduct(col.id, { ...fields, name: fields.name || source.name, preview });
         if (fields.tags) await zarbo.setTags(product.id, fields.tags);
       } else {
         say('Старые модели продукта снимаются с показа…');
         await zarbo.retireModels(product.id);
+      }
+      if (!isNew && preview) {
+        say('Превью…');
+        await zarbo.setPreview(product.id, preview);
       }
       const base = (fields.name || source.name).replace(/\.(glb|gltf|usdz)$/i, '');
       say('GLB…');
@@ -171,6 +177,30 @@ export function ZarboPanel({ actions }) {
       zarbo.products(col).then(setProducts, () => {});
     } catch (e) {
       say(`Ошибка: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Кадр текущего вида -> картинка продукта в Zarbo. Для уже созданного продукта
+  // заливаем сразу, для нового — держим и отправим вместе с продуктом.
+  const makePreview = async () => {
+    setBusy(true);
+    try {
+      const blob = await actions.snapshot();
+      if (!blob) throw new Error('кадр не получился');
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreview(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
+      const existing = products.find((p) => String(p.id) === productId);
+      if (existing) {
+        await zarbo.setPreview(existing.id, blob);
+        setLog(['Превью загружено в продукт']);
+      } else {
+        setLog(['Превью снято — уйдёт вместе с новым продуктом']);
+      }
+    } catch (e) {
+      setLog([`Ошибка: ${e.message}`]);
     } finally {
       setBusy(false);
     }
@@ -214,6 +244,10 @@ export function ZarboPanel({ actions }) {
         <Select value={String(source?.id ?? '')} options={glbSources.map((t) => ({ value: String(t.id), label: t.name + (t.edited ? ' ✎' : '') }))} onChange={setGlbTab} />
       </Row>
       <Row label="USDZ (iOS)"><Select value={usdzChoice} options={usdzOptions} onChange={setUsdzFrom} /></Row>
+      <Row label="Превью продукта" title="Картинка продукта в Zarbo — кадр текущего вида во вьюпорте">
+        <button onClick={makePreview} disabled={busy || !actions.snapshot}>Создать превью</button>
+        {previewUrl && <img class="preview-thumb" src={previewUrl} alt="превью" />}
+      </Row>
       <Row label="Камера виджета" title="camera_orbit виджета = текущий вид во вьюпорте">
         <input type="checkbox" checked={useCamera} onChange={(e) => setUseCamera(e.currentTarget.checked)} />
       </Row>

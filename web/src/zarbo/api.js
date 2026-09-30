@@ -79,9 +79,13 @@ export const zarbo = {
   createCollection: (name) => call('POST', '/collections/', form({ name })),
 
   products: async (collection) => results(await call('GET', `/products/?limit=1000&offset=0&collections=${encodeURIComponent(collection.key ?? collection.id)}`)),
-  createProduct: (collectionId, { guid, name, description }) => call('POST', '/products/', form({
+  // Превью продукта — обычный файл в multipart (поле preview), ровно так это делает
+  // само приложение Zarbo: Product.preview = ImageField, поле есть в сериализаторе.
+  createProduct: (collectionId, { guid, name, description, preview }) => call('POST', '/products/', form({
     collection_id: collectionId, guid, name, description,
+    preview: preview ? [preview, 'preview.png'] : undefined,
   })),
+  setPreview: (productId, blob) => call('PATCH', `/products/${productId}/`, form({ preview: [blob, 'preview.png'] })),
   setTags: (productId, tags) => call('PATCH', `/products/${productId}/`, form({ tags })),
 
   models: async (productId) => results(await call('GET', `/models/?limit=1000&offset=0&product=${productId}`)),

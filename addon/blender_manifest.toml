@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "instant_zarbo_viewer"
-version = "3.2.1"
+version = "3.2.2"
 name = "Instant Zarbo Viewer"
 tagline = "Preview in LAN browser like model-viewer and publish to Zarbo"
 maintainer = "BykovSer"

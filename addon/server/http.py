@@ -30,6 +30,8 @@ _SCHEME = re.compile(r"^https?://", re.I)
 _cache = {"collections": None, "at": 0.0, "key": "", "host": "", "error": ""}
 # Последняя публикация: ссылку показываем панели заново после перезагрузки/закрытия вкладки.
 _last_publish = {"url": "", "name": "", "at": 0.0}
+# Последние запросы прокси: по нему видно, дошёл ли запрос из браузера и чем кончился.
+_trace: list = []
 _store_path: Path | None = None
 CACHE_TTL = 60
 
@@ -112,6 +114,11 @@ def embed_host(host: str) -> str:
     return _retarget(host, ("api.", "embed."), ("api-", "embed-"))
 
 
+def _note(method: str, path: str, result: str):
+    _trace.append(f"{time.strftime('%H:%M:%S')} {method} {path} -> {result}")
+    del _trace[:-40]   # держим последние 40
+
+
 def config_state() -> dict:
     """Состояние Zarbo-части: тот же ответ, что у GET /api/zarbo/config, — панель Blender
     читает его напрямую, без HTTP."""
@@ -128,6 +135,7 @@ def config_state() -> dict:
         "last_publish": _last_publish if _last_publish["url"] else None,
         "warm": warm,
         "warm_error": _cache["error"],
+        "trace": list(_trace),
     }
 
 
@@ -258,6 +266,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             with urllib.request.urlopen(req, timeout=600) as resp:
                 body = resp.read()
+                _note(self.command, rest, str(resp.status))
                 if rest == "/collections/" and self.command == "GET":
                     try:
                         _cache.update(collections=json.loads(body.decode("utf-8")), at=time.time(),
@@ -266,10 +275,13 @@ class Handler(SimpleHTTPRequestHandler):
                         pass
                 self.reply(resp.status, body, resp.headers.get("Content-Type", "application/json"))
         except urllib.error.HTTPError as e:
+            _note(self.command, rest, str(e.code))
             self.reply(e.code, e.read(), e.headers.get("Content-Type", "application/json"))
         except urllib.error.URLError as e:
+            _note(self.command, rest, f"URLError {e.reason}")
             self.reply(502, json.dumps({"detail": f"Zarbo недоступен: {e.reason}"}).encode())
         except Exception as e:  # noqa: BLE001 — что угодно, но ответ уйти обязан
+            _note(self.command, rest, f"{type(e).__name__}: {e}")
             traceback.print_exc()
             self.reply(502, json.dumps({"detail": f"{type(e).__name__}: {e}"}).encode())
 

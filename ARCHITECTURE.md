@@ -123,19 +123,30 @@ Browser ── fetch /api/scene ──► Viewer(three.js) ── tone mapping /
 - Живой тест без Blender: `tools/zarbo-live-test.mjs` — Node импортирует настоящий `api.js`
   и подменяет `fetch`, так что проверяется именно тот код, что уходит в сборку. Ключ в `IZV_ZARBO_KEY`.
 
-## 3. USDZ (`addon/export/usdz.py` + `usdz_legacy_worker.py`)
+## 3. USDZ (`addon/export/usdz.py` + `usdz_worker.py`)
 
-**USDZ из Blender 4.2+/5.x не открывается на iOS**, поэтому текущий Blender экспортирует только GLB, а USDZ
-делает Blender 4.1 в фоне (`blender -b --python usdz_legacy_worker.py -- in.glb out.usdz <size> <anim>`):
+USDZ пишет **тот же Blender** (по умолчанию `bpy.app.binary_path`, в preferences можно указать другой) —
+отдельным процессом, чтобы не трогать сцену пользователя:
 
-- импорт GLB → **сжатие текстур** (`image.scale` до 1024/2048/4096, JPEG если нет альфы, PNG если есть) —
-  в 4.1 нет `usdz_downscale_size`;
+```
+blender -b --factory-startup --python usdz_worker.py -- in.glb out.usdz <size> <anim> <flatten>
+```
+
+- **импорт GLB** → сжатие текстур (`image.scale` до 1024/2048/4096, JPEG если нет альфы, PNG если есть);
+- **адаптация материалов** (`flatten=1`, галочка «Упрощать материалы»): `usdz_materials.py` схлопывает
+  KHR-каналы в то, что понимает UsdPreviewSurface — стекло (`Transmission Weight`) в группу `TtoA`,
+  диэлектрик с `IOR > 2` в `PBRtoUSDz`. Нод-группы лежат в `addon/assets/usdz_nodes.blend`
+  (вырезаны из EzExport `library.blend`); логика портирована из EzExport → MaxConverter;
 - **анимации**: диапазон кадров берётся из actions, `export_animation` + скелетка + shape keys;
-- Y-up руками (в 4.1 нет `convert_orientation`): корни под empty с −90° X, `upAxis=Y` через `pxr`;
 - без светильников (World → DomeLight ARKit не принимает), первый UV → `st`, `rename_uvmaps=False`;
-- упаковка `UsdUtils.CreateNewARKitUsdzPackage`, проверка `ComplianceChecker(arkit=True)`.
+- **санитайз** `usdc` перед упаковкой: убираем `ColorSpaceAPI` из apiSchemas и свойства `colorSpace:*` /
+  `:blender:*`, `SkelAnimation` раскладываем покадрово — иначе старые iOS не читают. По той же причине
+  в окружении стоит `USD_WRITE_NEW_USDC_FILES_AS_VERSION=0.8.0` (Blender 4.5 писал crate 0.9.0);
+- упаковка `UsdUtils.CreateNewARKitUsdzPackage` + `ComplianceChecker(arkit=True)`, `upAxis=Y`;
+- `wrap_y_up()` (корни под empty с −90° X) нужен только для Blender 4.1, где нет `convert_orientation`.
 
-Нет Blender 4.1 → USDZ не делаем, GLB уходит в Zarbo с `ar_ios`, iOS-версию собирает сервер Zarbo.
+Зачем адаптация: без неё стекло уезжает в USDZ с `opacity 0.0` (проверено на тестовой сцене) — на iPhone его
+просто не видно. Плата — материал в USDZ проще, чем в GLB: в GLB каналы остаются полными, это ожидаемое расхождение.
 USDZ не умеет Draco — тяжёлая геометрия раздувает файл (тестовая сцена с кольцом: GLB 3 МБ с Draco → USDZ 47 МБ); нужна децимация.
 
 ## 4. Live link

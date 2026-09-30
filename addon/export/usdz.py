@@ -22,14 +22,15 @@ def usdz_blender(pref_path: str) -> Path | None:
     return path if path.is_file() else None
 
 
-def export_usdz(glb: Path, blender: Path, texture_size: str, animation: bool, timeout: float = 600) -> Path:
+def export_usdz(glb: Path, blender: Path, texture_size: str, animation: bool,
+                flatten: bool = True, timeout: float = 600) -> Path:
     dst = glb.with_suffix(".usdz")
     max_size = "0" if texture_size == 'KEEP' else texture_size
     # Older iOS can't read newer crate files (Blender 4.5 wrote 0.9.0).
     env = {**os.environ, "USD_WRITE_NEW_USDC_FILES_AS_VERSION": "0.8.0"}
     proc = subprocess.run(
         [str(blender), "-b", "--factory-startup", "--python", str(WORKER), "--",
-         str(glb), str(dst), max_size, "1" if animation else "0"],
+         str(glb), str(dst), max_size, "1" if animation else "0", "1" if flatten else "0"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env,
     )
     line = next((l for l in proc.stdout.splitlines() if l.startswith("IZV_RESULT ")), None)

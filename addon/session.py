@@ -46,7 +46,8 @@ def build(context, legacy_blender_path: str = "") -> dict:
     usdz = None
     blender = usdz_blender(legacy_blender_path)
     if settings.export.export_usdz and blender:
-        usdz = export_usdz(glb, blender, settings.export.usdz_texture_size, settings.export.usdz_animation)
+        usdz = export_usdz(glb, blender, settings.export.usdz_texture_size,
+                           settings.export.usdz_animation, settings.export.usdz_flatten)
 
     v = settings.viewer
     env = export_hdri(context.scene, v.environment, v.environment_path, out)

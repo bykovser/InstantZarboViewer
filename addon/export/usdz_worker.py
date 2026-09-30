@@ -128,11 +128,18 @@ def check_arkit(path: Path) -> list[str]:
 
 
 def main():
-    src, dst, max_size, animation = sys.argv[sys.argv.index("--") + 1:]
+    args = sys.argv[sys.argv.index("--") + 1:]
+    src, dst, max_size, animation = args[:4]
+    flatten = len(args) > 4 and args[4] == "1"
     src, dst, max_size, animation = Path(src), Path(dst), int(max_size), animation == "1"
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=str(src))
+    if flatten:
+        # UsdPreviewSurface не умеет transmission/IOR: схлопываем материалы под iOS.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from usdz_materials import apply_usdz_adaptation
+        apply_usdz_adaptation()
     work = dst.parent / f"{dst.stem}_work"
     compress_textures(max_size, work / "textures")
     rename_first_uv()

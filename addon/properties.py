@@ -53,6 +53,11 @@ class IZV_ExportSettings(bpy.types.PropertyGroup):
     export_usdz: BoolProperty(name="USDZ", description="Also export USDZ for iOS Quick Look", default=True)
     usdz_texture_size: EnumProperty(name="USDZ textures", items=TEXTURE_SIZE, default='2048')
     usdz_animation: BoolProperty(name="Animation", default=True)
+    usdz_flatten: BoolProperty(
+        name="Упрощать материалы",
+        description="Схлопнуть transmission/IOR/specular в базовый PBR: на iPhone стекло и металл "
+                    "выглядят как задумано. GLB-версия при этом остаётся с полными каналами",
+        default=True)
 
 
 

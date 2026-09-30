@@ -100,6 +100,7 @@ class IZV_PT_Export(bpy.types.Panel):
         sub.enabled = e.export_usdz
         sub.prop(e, "usdz_texture_size")
         sub.prop(e, "usdz_animation")
+        sub.prop(e, "usdz_flatten")
 
 
 
